@@ -51,6 +51,9 @@ class LiveTrace(Base):
     source_service: Mapped[str | None] = mapped_column(String(80))
     source_version: Mapped[int | None]
     destination_profile: Mapped[str | None] = mapped_column(String(64))
+    workflow_id: Mapped[int | None] = mapped_column(ForeignKey("live_workflows.id"), index=True)
+    policy_change_id: Mapped[int | None] = mapped_column(ForeignKey("policy_changes.id"))
+    decision_origin: Mapped[str | None] = mapped_column(String(32))
 
 class LiveResource(Base):
     __tablename__ = "live_resources"
@@ -60,3 +63,22 @@ class LiveResource(Base):
     path: Mapped[str] = mapped_column(Text)
     commit: Mapped[str] = mapped_column(String(40))
     classification: Mapped[str] = mapped_column(String(24))
+
+
+class LiveWorkflow(Base):
+    __tablename__ = "live_workflows"
+    __table_args__ = (UniqueConstraint("resource_id", "destination"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    resource_id: Mapped[str] = mapped_column(ForeignKey("live_resources.id"))
+    destination: Mapped[str] = mapped_column(ForeignKey("services.id"), index=True)
+    rule_id: Mapped[str] = mapped_column(ForeignKey("organization_rules.id"))
+    operation: Mapped[str] = mapped_column(String(64), default="analyze_document")
+    account_scope: Mapped[str] = mapped_column(String(80))
+
+
+class LiveTransition(Base):
+    __tablename__ = "live_policy_transitions"
+    change_id: Mapped[int] = mapped_column(ForeignKey("policy_changes.id"), primary_key=True)
+    previous_status: Mapped[str] = mapped_column(String(32))
+    current_status: Mapped[str] = mapped_column(String(32))
+    invalidated: Mapped[bool]

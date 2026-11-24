@@ -11,13 +11,14 @@ from .gateway import ToolDecision, invoke
 from .live_config import LiveSettings
 from .live_gateway import ANALYZER
 from .live_models import LiveTrace
+from .live_policy import MONITORED_ANALYZER
 
 
-def verify_transfer(db, resource, result, expectation, reason=None, word_count=None):
+def verify_transfer(db, resource, result, expectation, reason=None, word_count=None, *, destination=ANALYZER):
     audit = db.get(Audit, result.request_id)
     trace = db.get(LiveTrace, result.request_id)
     receipt = db.get(Receipt, result.request_id)
-    if not audit or not trace or trace.resource_id != resource or audit.destination != ANALYZER:
+    if not audit or not trace or trace.resource_id != resource or audit.destination != destination:
         raise ValueError("No matching Live audit and resource trace")
     if any(getattr(audit, field) != getattr(result, field) for field in
            ("classification", "policy_version", "decision", "reason", "delivery")):
@@ -47,6 +48,7 @@ def verify_transfer(db, resource, result, expectation, reason=None, word_count=N
 async def main():
     parser = argparse.ArgumentParser(description="Analyze a registered Live resource over MCP")
     parser.add_argument("resource")
+    parser.add_argument("--destination", choices=[ANALYZER, MONITORED_ANALYZER], default=ANALYZER)
     parser.add_argument("--expect", choices=["allowed", "blocked"], help="Verify persisted Live audit and analyzer receipt")
     parser.add_argument("--reason", help="Expected policy reason for a blocked request")
     parser.add_argument("--word-count", type=int, help="Expected word count of the synthetic fixture")
@@ -59,13 +61,18 @@ async def main():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = ToolDecision.model_validate(await invoke(session, "analyze_document", {
-                    "document_id": args.resource, "destination_service": ANALYZER,
+                    "document_id": args.resource, "destination_service": args.destination,
                 }))
     output = result.model_dump()
     if args.expect:
         try:
             with sessions(settings.database_url)() as db:
-                output["verification"] = verify_transfer(db, args.resource, result, args.expect, args.reason, args.word_count)
+                output["verification"] = verify_transfer(
+                    db, args.resource, result, args.expect, args.reason, args.word_count, destination=args.destination,
+                )
+                trace = db.get(LiveTrace, result.request_id)
+                output["verification"].update(workflow_id=trace.workflow_id, policy_change_id=trace.policy_change_id,
+                                              decision_origin=trace.decision_origin)
         except ValueError as error:
             parser.exit(1, f"{result.request_id}: {result.reason} / {result.delivery}. {error}\n")
     print(json.dumps(output, indent=2))

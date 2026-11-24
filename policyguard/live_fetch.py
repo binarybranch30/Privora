@@ -1,6 +1,8 @@
 import asyncio
 import ipaddress
 import socket
+import ssl
+from pathlib import Path
 from urllib.robotparser import RobotFileParser
 
 import httpx
@@ -11,6 +13,14 @@ from .monitor import LIMIT, USER_AGENT, normalize
 
 class FetchError(ValueError):
     pass
+
+
+def fixture_url(value):
+    url = httpx.URL(value)
+    if (url.scheme != "https" or url.host != "127.0.0.1" or url.port is None
+            or url.path != "/privacy" or url.query or url.fragment or url.userinfo):
+        raise FetchError("INVALID_FIXTURE_URL")
+    return url
 
 
 def permitted_url(value, allowed):
@@ -32,15 +42,17 @@ async def public_ip(host):
     return str(ips[0])
 
 
-async def fetch_live_policy(value, allowed, *, transport=None, resolve=public_ip):
-    url = permitted_url(value, allowed)
+async def fetch_live_policy(value, allowed, *, transport=None, resolve=public_ip, fixture_ca=""):
+    url = fixture_url(value) if fixture_ca else permitted_url(value, allowed)
+    trust = ssl.create_default_context(cafile=str(Path(fixture_ca))) if fixture_ca else True
     async with asyncio.timeout(20), httpx.AsyncClient(
-        transport=transport, trust_env=False, timeout=8, headers={"User-Agent": USER_AGENT, "Accept-Encoding": "identity"},
+        transport=transport, trust_env=False, timeout=8, verify=trust,
+        headers={"User-Agent": USER_AGENT, "Accept-Encoding": "identity"},
     ) as client:
         async def read(target):
-            ip = await resolve(target.host)
+            ip = "127.0.0.1" if fixture_ca else await resolve(target.host)
             async with client.stream(
-                "GET", target.copy_with(host=ip), headers={"Host": target.host, "Connection": "close"},
+                "GET", target.copy_with(host=ip), headers={"Host": target.netloc.decode(), "Connection": "close"},
                 extensions={"sni_hostname": target.host},
             ) as response:
                 if response.is_redirect:
@@ -48,6 +60,8 @@ async def fetch_live_policy(value, allowed, *, transport=None, resolve=public_ip
                 if response.status_code in {404, 410}:
                     return response.status_code, None, None
                 response.raise_for_status()
+                if response.headers.get("content-encoding", "identity").lower() != "identity":
+                    raise FetchError("UNSUPPORTED_CONTENT_ENCODING")
                 data = bytearray()
                 async for chunk in response.aiter_bytes(chunk_size=8192):
                     data.extend(chunk)
@@ -66,6 +80,8 @@ async def fetch_live_policy(value, allowed, *, transport=None, resolve=public_ip
                     raise FetchError("ROBOTS_DENIED")
             status, detail, body = await read(url)
             if 300 <= status < 400 and detail:
+                if fixture_ca:
+                    raise FetchError("FIXTURE_REDIRECT_DENIED")
                 url = permitted_url(str(url.join(detail)), allowed)
                 continue
             if status != 200 or body is None:

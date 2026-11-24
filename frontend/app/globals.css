@@ -122,3 +122,9 @@ td small { display: block; margin-top: 3px; }
 .live-form .live-check { display: flex; padding-bottom: 8px; }
 .live-row-actions button { margin: 2px; }
 .live-panel pre { max-height: 20rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.live-impact { margin-top: 12px; }
+.live-impact h4 { margin: 12px 0 4px; font-weight: 650; }
+.live-impact details { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 7px; }
+.live-impact summary { cursor: pointer; overflow-wrap: anywhere; }
+.live-impact a, td a { color: var(--signal); text-decoration: underline; text-underline-offset: .2em; }
+.live-impact code { overflow-wrap: anywhere; }

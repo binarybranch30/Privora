@@ -16,9 +16,11 @@ from .db import Audit, Change, Receipt, Rule, Service, Version, now, sessions
 from .gateway import locked_service
 from .live_config import LiveSettings
 from .live_connector import github_text, validate_resource
-from .live_fetch import FetchError, fetch_live_policy, permitted_url
+from .live_fetch import FetchError, fetch_live_policy, fixture_url, permitted_url
 from .live_gateway import ANALYZER, ORG, live_gateway
-from .live_models import ArchiveVersion, LiveIdentity, LiveResource, LiveReview, LiveSource, LiveTrace
+from .live_models import ArchiveVersion, LiveIdentity, LiveResource, LiveReview, LiveSource, LiveTrace, LiveTransition, LiveWorkflow
+from .live_policy import LOCAL_SCOPE, MONITORED_ANALYZER, MONITORED_SCOPE, active_drift, formatting_equivalent
+from .live_impact import Impact, policy_impact
 from .monitor import ChatExtractor, MockExtractor, changed_passages, observe
 
 LOG = logging.getLogger(__name__)
@@ -51,6 +53,15 @@ class ReviewInput(BaseModel):
     agreement: Annotated[str, Field(min_length=10, max_length=2000)]
     opt_out: Literal["VERIFIED", "NOT_REQUIRED", "UNKNOWN"]
     no_training: bool
+
+
+class WorkflowInput(BaseModel):
+    resource_id: Id
+    destination: Literal["fictional_analyzer"]
+
+
+class WorkflowCreated(BaseModel):
+    id: int
 
 
 def bootstrap(db):
@@ -104,7 +115,10 @@ def create_live_app(settings, *, fetch=fetch_live_policy, read_file=github_text,
             attempt = now()
             error = None
             try:
-                final_url, content = await fetch(url, settings.policy_hosts)
+                if service_id == MONITORED_ANALYZER and settings.fixture_ca and url == settings.analyzer_policy_url:
+                    final_url, content = await fetch(url, settings.policy_hosts, fixture_ca=settings.fixture_ca)
+                else:
+                    final_url, content = await fetch(url, settings.policy_hosts)
             except FetchError as problem:
                 error = str(problem)
             except (httpx.HTTPError, OSError, ValueError, TimeoutError):
@@ -117,8 +131,26 @@ def create_live_app(settings, *, fetch=fetch_live_policy, read_file=github_text,
                     if error:
                         source.fetch_status = error
                         return {"status": error, "changed": False}
+                    status_before = service.status
+                    previous_drift = active_drift(db, service)
+                    earlier_transition = db.get(LiveTransition, previous_drift.id) if previous_drift else None
+                    was_approved = (
+                        service.status == "APPROVED" and service.current_version is not None
+                        and service.approved_version == service.current_version
+                    )
                     service.source = final_url
-                    version, change = await observe(db, service, content, LiveExtractor(), organization_id=ORG)
+                    version, change = await observe(
+                        db, service, content, fallback if service_id == MONITORED_ANALYZER else LiveExtractor(),
+                        organization_id=ORG,
+                        cosmetic_equivalent=formatting_equivalent if service_id == MONITORED_ANALYZER else None,
+                    )
+                    if change:
+                        db.add(LiveTransition(
+                            change_id=change.id, previous_status=status_before, current_status=service.status,
+                            invalidated=service.status == "REVIEW_REQUIRED" and bool(
+                                was_approved or (earlier_transition and earlier_transition.invalidated)
+                            ),
+                        ))
                     source.fetch_status = "OK"
                     return {"status": "OK", "version": version.number, "changed": change is not None}
 
@@ -135,9 +167,18 @@ def create_live_app(settings, *, fetch=fetch_live_policy, read_file=github_text,
 
     @asynccontextmanager
     async def lifespan(_):
-        with db_factory() as db:
+        with db_factory.begin() as db:
             if db.get(LiveIdentity, 1) is None or db.get(Rule, "demo-org"):
                 raise RuntimeError("Expected a provisioned Live database")
+            if settings.analyzer_policy_url:
+                validate = fixture_url if settings.fixture_ca else lambda url: permitted_url(url, settings.policy_hosts)
+                url = str(validate(settings.analyzer_policy_url))
+                if not db.get(Service, MONITORED_ANALYZER):
+                    db.add(Service(id=MONITORED_ANALYZER, name="Fictional monitored analyzer", source=url))
+                    db.flush()
+                    db.add(LiveSource(service_id=MONITORED_ANALYZER, configured_url=url))
+                elif db.get(LiveSource, MONITORED_ANALYZER).configured_url != url:
+                    raise RuntimeError("The registered analyzer policy URL does not match Live configuration")
         async with mcp.session_manager.run():
             task = asyncio.create_task(worker()) if schedule else None
             try:
@@ -210,6 +251,8 @@ def create_live_app(settings, *, fetch=fetch_live_policy, read_file=github_text,
                 audit.append(AuditView.model_validate(row).model_dump() | {
                     "source_service": trace.source_service, "source_version": trace.source_version,
                     "resource_id": trace.resource_id, "destination_profile": trace.destination_profile,
+                    "workflow_id": trace.workflow_id, "policy_change_id": trace.policy_change_id,
+                    "decision_origin": trace.decision_origin,
                 })
             historical = list(db.scalars(select(ArchiveVersion).order_by(ArchiveVersion.archived_at.desc()).limit(100)))
             archive = []
@@ -243,6 +286,34 @@ def create_live_app(settings, *, fetch=fetch_live_policy, read_file=github_text,
                 db.flush()
                 db.add(LiveSource(service_id=body.id, configured_url=url))
         return {"id": body.id}
+
+    @app.get("/api/policy-changes/{change_id}/impact", dependencies=[Depends(admin)])
+    async def impact(change_id: int) -> Impact:
+        with db_factory() as db:
+            result = policy_impact(db, change_id, settings.stale_seconds,
+                                   monitored_enabled=bool(settings.analyzer_policy_url))
+            if result is None:
+                raise HTTPException(404, "Observed policy change not found")
+            return result
+
+    @app.post("/api/workflows", status_code=201, dependencies=[Depends(mutation)])
+    async def register_workflow(body: WorkflowInput) -> WorkflowCreated:
+        async with lock:
+            with db_factory.begin() as db:
+                if not settings.analyzer_policy_url or not db.get(Service, body.destination):
+                    raise HTTPException(409, "Configure the monitored analyzer first")
+                if not db.get(LiveResource, body.resource_id):
+                    raise HTTPException(404, "Registered resource not found")
+                current = db.scalar(select(LiveWorkflow).where(
+                    LiveWorkflow.resource_id == body.resource_id, LiveWorkflow.destination == body.destination,
+                ))
+                if current:
+                    raise HTTPException(409, "Workflow already registered")
+                workflow = LiveWorkflow(resource_id=body.resource_id, destination=body.destination,
+                                        rule_id=ORG, account_scope=MONITORED_SCOPE)
+                db.add(workflow)
+                db.flush()
+                return WorkflowCreated(id=workflow.id)
 
     @app.post("/api/services/{service_id}/refresh", dependencies=[Depends(mutation)])
     async def refresh_service(service_id: str):
@@ -289,8 +360,16 @@ def create_live_app(settings, *, fetch=fetch_live_policy, read_file=github_text,
                     raise HTTPException(422, "Register the GitHub policy source first")
                 if db.get(LiveResource, body.id):
                     raise HTTPException(409, "Resource ID already registered")
+                conflicting = db.scalar(select(LiveResource.id).where(
+                    LiveResource.repository == settings.github_repo, LiveResource.path == body.path,
+                    LiveResource.commit == body.commit, LiveResource.classification != body.classification,
+                ).limit(1))
+                if conflicting:
+                    raise HTTPException(409, "This repository file already has a different trusted classification")
                 db.add(LiveResource(id=body.id, service_id=body.service_id, repository=settings.github_repo,
                                     path=body.path, commit=body.commit, classification=body.classification))
+                db.flush()
+                db.add(LiveWorkflow(resource_id=body.id, destination=ANALYZER, rule_id=ORG, account_scope=LOCAL_SCOPE))
         return {"id": body.id}
 
     return app

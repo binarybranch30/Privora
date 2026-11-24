@@ -33,3 +33,12 @@ The dashboard proxies /api/live to the Live backend on port 8001. The following 
 | POST /resources | Register resource ID, GitHub policy service ID, text path, commit SHA and classification |
 
 Live MCP is http://localhost:8001/mcp/ with a separate bearer credential. The sole tool accepts document_id and destination_service. Use the registered resource ID and local_analyzer as destination. Source and destination evidence are stored in audit. The Live backend implements no demo reset or synthetic policy mutations.
+
+## Phase 3 Live endpoints
+
+| Method and route | Authentication | Result and failures |
+| --- | --- | --- |
+| GET /policy-changes/{id}/impact | Live admin session | Returns policy URLs and versions, evidence, workflow decisions, calculated counts, and dated history. Returns 404 for an unknown change and 401 without a session. |
+| POST /workflows | Live admin session and mutation header | Accepts resource_id and destination fictional_analyzer. Returns the workflow ID. Returns 404 for an unknown resource, 409 for an existing binding or disabled fixture, and 422 for invalid input. |
+
+Use existing /services/{id}/refresh and /services/{id}/review endpoints for the monitored analyzer. A review for a superseded version returns 409. Dashboard audit includes workflow_id, policy_change_id and decision_origin where recorded. Historical counts cover matching allowed transfers on the superseded version before the change. Candidate history narrows this to received confidential transfers and includes up to 25 example request IDs per workflow.

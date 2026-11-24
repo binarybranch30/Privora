@@ -5,12 +5,25 @@ import { FileText, ShieldCheck } from "lucide-react";
 
 type Service = { id: string; name: string; status: string; current_version: number | null; source: string; last_checked: string | null; last_attempt: string | null; fetch_status: string };
 type Version = { id: number; service_id: string; number: number; observed_at: string; source: string; content: string };
-type Change = { id: number; service_id: string; analysis_status: string; rule: string; reason: string; passages: { old: string; new: string }[]; clauses: { topic: string; new_interpretation: string; reason: string; uncertainty: string; review_action: string }[] };
-type Audit = { request_id: string; resource_id: string | null; classification: string | null; source_service: string | null; source_version: number | null; destination: string; destination_profile: string | null; policy_version: number | null; decision: string; delivery: string; reason: string; timestamp: string };
+type Change = { id: number; service_id: string; previous_id: number | null; version_id: number; enforcement: string; analysis_status: string; rule: string; reason: string; passages: { old: string; new: string }[]; clauses: { topic: string; new_interpretation: string; reason: string; uncertainty: string; review_action: string }[] };
+type Audit = { request_id: string; resource_id: string | null; classification: string | null; source_service: string | null; source_version: number | null; destination: string; destination_profile: string | null; policy_version: number | null; decision: string; delivery: string; reason: string; timestamp: string; decision_origin: string | null; policy_change_id: number | null };
 type Historical = { service_id: string; release: string; policy_url: string | null; archived_at: string; imported_at: string; content: string; passages: { old: string; new: string }[] };
 type Dashboard = {
   services: Service[]; versions: Version[]; changes: Change[]; audit: Audit[]; archive: Historical[];
   resources: { id: string; service_id: string; classification: string }[]; connector_configured: boolean;
+};
+type Impact = {
+  previous: { version: number; url: string } | null;
+  observed: { version: number; url: string };
+  affected_workflows: number; restricted_workflows: number; unaffected_workflows: number;
+  historical_review_candidates: number; impacted_classifications: string[];
+  workflows: {
+    id: number; resource_id: string; source_service: string; operation: string; destination: string;
+    classification: string; account_scope: string; decision: string; reason: string; affected: boolean;
+    no_training: boolean; allow_public: boolean; next_action: string;
+    historical: { previously_allowed: number; count: number; first_received: string | null; last_received: string | null;
+      events: { request_id: string; timestamp: string; classification: string | null; decision: string; delivery: string }[] };
+  }[];
 };
 
 const label = (value: string) => value.replaceAll("_", " ");
@@ -25,6 +38,45 @@ async function request<T>(route: string, data?: object, method = "POST"): Promis
     throw Object.assign(new Error(typeof payload?.detail === "string" ? payload.detail : "Live request failed (" + response.status + ")."), { status: response.status });
   }
   return await response.json();
+}
+
+function BlastRadius({ change }: { change: Change }) {
+  const [impact, setImpact] = useState<Impact>();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      setImpact(await request<Impact>("policy-changes/" + change.id + "/impact"));
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Unable to load impact.");
+    } finally {
+      setLoading(false);
+    }
+  }
+  return <div className="live-impact">
+    <button className="secondary" disabled={loading} onClick={() => void load()}>{loading ? "Calculating…" : impact ? "Refresh blast radius" : "View blast radius"}</button>
+    {error && <p role="alert" className="message error">{error}</p>}
+    {impact && <div>
+      <h4>Privacy blast radius</h4>
+      <p>{impact.previous ? "v" + impact.previous.version + " → " : ""}v{impact.observed.version} · <a href={impact.observed.url}>Observed policy source</a></p>
+      <p>{impact.affected_workflows} affected · {impact.restricted_workflows} restricted · {impact.unaffected_workflows} unaffected · {impact.historical_review_candidates} historical review candidates</p>
+      {!!impact.impacted_classifications.length && <p>Impacted classifications · {impact.impacted_classifications.map(label).join(", ")}</p>}
+      {!impact.workflows.length && <p>No configured workflows use this service.</p>}
+      {impact.workflows.map((workflow) => <details key={workflow.id}>
+        <summary>{workflow.source_service} → {workflow.operation} → {workflow.destination} · {label(workflow.classification)} · {label(workflow.decision)}</summary>
+        <p><strong>{workflow.resource_id}</strong> · {workflow.account_scope} · {workflow.affected ? "Affected by this change" : "Unaffected by this change"}</p>
+        <p>{workflow.no_training ? "No AI training on confidential documents" : "Explicit approval for confidential transfers"} · {workflow.allow_public ? "Public transfers allowed" : "Public transfers prohibited"}</p>
+        <p><code>{workflow.reason}</code> · {workflow.next_action}</p>
+        <p>{workflow.historical.previously_allowed} previously allowed · {workflow.historical.count} historical review candidates</p>
+        {workflow.historical.count > 0 && <>
+          <p>{time(workflow.historical.first_received)} – {time(workflow.historical.last_received)}. Review these deliveries against the applicable terms at the time.</p>
+          <ul>{workflow.historical.events.map((event) => <li key={event.request_id}>{time(event.timestamp)} · {label(event.classification ?? "Unknown")} · {label(event.decision)} / {label(event.delivery)} · <a href={"#audit-" + event.request_id}><code>{event.request_id}</code></a></li>)}</ul>
+        </>}
+      </details>)}
+    </div>}
+  </div>;
 }
 
 function Form({ children, submit }: { children: React.ReactNode; submit: (fields: FormData) => void }) {
@@ -150,15 +202,24 @@ export default function LiveDashboard() {
           <button className="primary" disabled={busy}>Register resource</button>
         </Form>
         <p className="muted">{data.resources.length ? data.resources.map((item) => item.id + " · " + item.classification).join(" | ") : "No resources registered."}</p>
+        {data.services.some((service) => service.id === "fictional_analyzer") && data.resources.length > 0 && <Form submit={(fields) => void run(async () => {
+          await request("workflows", { resource_id: fields.get("resource_id"), destination: "fictional_analyzer" });
+          return "Workflow bound to the fictional monitored analyzer.";
+        })}>
+          <label>Resource for monitored analyzer<select name="resource_id">{data.resources.map((item) => <option key={item.id}>{item.id}</option>)}</select></label>
+          <button className="secondary" disabled={busy}>Bind workflow</button>
+        </Form>}
       </section>}
       <section className="section">
         <h2>Observed policy changes</h2>
         {data.changes.length === 0 && <div className="panel empty">No observed changes.</div>}
-        {data.changes.map((change) => <article className="panel evidence" key={change.id}>
+        {data.changes.map((change) => <article className="panel evidence" key={change.id} id={"policy-change-" + change.id}>
           <div className="evidence-head"><h3><FileText size={18} />{change.service_id} · {label(change.reason)}</h3><span className="muted">{change.rule}</span></div>
+          <p className="evidence-footer">{data.versions.find((item) => item.id === change.previous_id)?.number ? "v" + data.versions.find((item) => item.id === change.previous_id)?.number + " → " : ""}v{data.versions.find((item) => item.id === change.version_id)?.number ?? "—"} · {label(change.enforcement)}</p>
           {change.passages.map((passage, index) => <div className="diff" key={index}><div><span>Previous</span><p><mark>{passage.old || "First observation"}</mark></p></div><div><span>Observed</span><p><mark>{passage.new || "Clause removed"}</mark></p></div></div>)}
           {change.clauses.map((clause, index) => <p className="evidence-footer" key={index}>{clause.topic} · {clause.new_interpretation} {clause.reason}<br />{clause.uncertainty} {clause.review_action}</p>)}
           <p className="evidence-footer">Applicability requires human verification. Extraction {label(change.analysis_status).toLowerCase()}.</p>
+          <BlastRadius change={change} />
         </article>)}
       </section>
       <section className="section">
@@ -169,12 +230,15 @@ export default function LiveDashboard() {
       <section className="section">
         <h2>Live transfer audit</h2>
         <div className="panel table-wrap"><table><thead><tr><th>Time / request ID</th><th>Resource</th><th>Source policy</th><th>Analyzer policy</th><th>Decision</th><th>Reason</th><th>Delivery</th></tr></thead><tbody>
-          {data.audit.map((row) => <tr key={row.request_id}>
+          {data.audit.map((row) => <tr key={row.request_id} id={"audit-" + row.request_id}>
             <td>{time(row.timestamp)}<small><code>{row.request_id}</code></small></td>
             <td>{row.resource_id ?? "—"}{row.classification && <small>{label(row.classification)}</small>}</td>
             <td>{row.source_service ?? "—"}{row.source_version ? " · v" + row.source_version : ""}</td>
             <td>{row.destination_profile ?? row.destination}{row.policy_version ? " · v" + row.policy_version : ""}</td>
-            <td>{label(row.decision)}</td><td><code>{row.reason}</code></td><td>{label(row.delivery)}</td>
+            <td>{label(row.decision)}</td><td><code>{row.reason}</code>
+              {row.decision_origin && <small>{label(row.decision_origin)}</small>}
+              {row.policy_change_id && <small><a href={"#policy-change-" + row.policy_change_id}>Policy change evidence</a></small>}
+            </td><td>{label(row.delivery)}</td>
           </tr>)}
           {!data.audit.length && <tr><td colSpan={7} className="empty">No Live transfers recorded.</td></tr>}
         </tbody></table></div>

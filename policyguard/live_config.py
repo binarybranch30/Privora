@@ -21,6 +21,8 @@ class LiveSettings:
     chat_key: str = ""
     check_seconds: int = 900
     stale_seconds: int = 3600
+    analyzer_policy_url: str = ""
+    fixture_ca: str = ""
 
     @classmethod
     def load(cls):
@@ -36,6 +38,8 @@ class LiveSettings:
             github_policy_url=values.get("LIVE_GITHUB_POLICY_URL") or "",
             github_repo=values.get("LIVE_GITHUB_REPO") or "", chat_url=values.get("LIVE_LLM_URL") or "",
             chat_model=values.get("LIVE_LLM_MODEL") or "", chat_key=values.get("LIVE_LLM_KEY") or "",
+            analyzer_policy_url=values.get("LIVE_ANALYZER_POLICY_URL") or "",
+            fixture_ca=values.get("LIVE_POLICY_FIXTURE_CA") or "",
         )
         db = make_url(settings.database_url)
         if db.drivername != "postgresql+psycopg" or db.database != "policyguard_live" or db.username != "policyguard_live":

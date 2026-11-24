@@ -58,3 +58,7 @@ Tests default to an isolated SQLite database. Set `TEST_DATABASE_URL` to a dedic
 ## Phase 2 Live Mode
 
 Run the existing Demo backend and a separate Live backend to use the dashboard mode selector. Live requires its own PostgreSQL database and role, its own administrative and MCP credentials, and explicit GitHub connector configuration. Follow the [Live setup guide](docs/LIVE_SETUP.md).
+
+## Phase 3 policy enforcement
+
+The optional fictional analyzer exercises automatic HTTPS policy-to-enforcement using the same Live MCP gateway and analyzer. Each observed change can be inspected with a database-backed blast radius. Follow the [Phase 3 demonstration](docs/PHASE3_DEMO.md).

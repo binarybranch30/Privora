@@ -24,3 +24,9 @@ Monitoring normalizes text, hashes it, diffs against the latest stored version, 
 Two instances of the FastAPI codebase serve separate loopback endpoints and PostgreSQL databases. The dashboard assigns Demo and Live fixed API routes. The Live gateway uses the same SDK and transport as Demo and exposes a bounded analyze_document operation. Live configuration is loaded directly from its own settings file. The direct adapter stores authoritative observations for enforcement and the archive importer writes historical records to a separate table. A scheduler and manual refresh share one observation path.
 
 A confidential Live request resolves to registered GitHub resource metadata. The gateway checks the current source policy and the approved local analyzer profile under the transfer lock, then uses private stdio to call GitHub MCP and the analyzer. The Live audit joins the transfer decision with resource and policy provenance.
+
+## Phase 3
+
+The fictional monitored analyzer is a separate service and account scope attached to the same local analyzer transport. Phase 3 stores workflow bindings between registered resources, organization rules, and destinations. The migration backfills the existing local-analyzer binding for each registered resource and leaves prior audit rows intact. New audits carry workflow, decision origin and observed policy-change provenance.
+
+The Live refresh stores the version, evidence, status, and transition in one transaction. The gateway and impact view use the same deterministic workflow evaluator. The blast radius evaluates configured paths on demand and looks for prior audit records at the superseded version. Historical candidate counts are independent of later resolution of the current review.

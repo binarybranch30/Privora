@@ -19,7 +19,8 @@ DEMO_SERVICE = "external_analyzer"
 USER_AGENT = "PolicyGuardMCP"
 LIMIT = 512_000
 
-Topic = Literal["AI training", "Data sharing", "Data retention", "Third-party processing", "Privacy opt-outs", "Unclassified"]
+Topic = Literal["AI training", "Data sharing", "Data retention", "Third-party processing",
+                "Confidential-data processing", "Privacy opt-outs", "Unclassified"]
 
 
 class Clause(BaseModel):
@@ -51,7 +52,8 @@ class MockExtractor:
             ("AI training", "training", r"train|improve.{0,30}model"),
             ("Data sharing", "sharing", r"shar(?:e|ing)|disclos"),
             ("Data retention", "retention", r"retain|retention|delet"),
-            ("Third-party processing", "processing", r"third.part|subprocessor"),
+            ("Third-party processing", "processing", r"third.part|subprocessor|service.provider"),
+            ("Confidential-data processing", "processing", r"confidential|process.{0,30}(?:submitted|customer|personal)"),
             ("Privacy opt-outs", "opt_out", r"opt.out|opt out"),
         ]
         for passage in passages:
@@ -140,7 +142,8 @@ def changed_passages(previous, content):
         for tag, i, j, k, l in diff.get_opcodes() if tag != "equal"
     ]
 
-async def observe(db, service: Service, content: str, extractor, *, organization_id="demo-org"):
+async def observe(db, service: Service, content: str, extractor, *, organization_id="demo-org",
+                  cosmetic_equivalent=None):
     content = normalize(content)
     if not content:
         raise ValueError("Policy is empty")
@@ -151,13 +154,23 @@ async def observe(db, service: Service, content: str, extractor, *, organization
         return previous, None
 
     passages = changed_passages(previous.content if previous else "", content)
+    preserve = bool(
+        cosmetic_equivalent and previous and previous.source == service.source
+        and service.status == "APPROVED" and service.approved_version == service.current_version
+        and cosmetic_equivalent(previous.content, content)
+    )
     service.current_version = (service.current_version or 0) + 1
-    service.approved_version = None
-    service.verified_no_training = False
-    service.status = "REVIEW_REQUIRED"
+    service.approved_version = service.current_version if preserve else None
+    if not preserve:
+        service.verified_no_training = False
+        service.status = "REVIEW_REQUIRED"
     rule = db.get(Rule, organization_id)
     training_signal = any(re.search(r"train|improve.{0,30}model", passage["old"] + " " + passage["new"], re.I) for passage in passages)
-    service.reason = "AI_TRAINING_CONFLICT" if rule and rule.no_training and training_signal else "POLICY_REVIEW_REQUIRED"
+    service.reason = (
+        "POLICY_APPROVAL_CARRIED_FORWARD" if preserve
+        else "AI_TRAINING_CONFLICT" if rule and rule.no_training and training_signal
+        else "POLICY_REVIEW_REQUIRED"
+    )
 
     version = Version(service_id=service.id, number=service.current_version, source=service.source, content=content, digest=digest)
     db.add(version)

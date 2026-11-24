@@ -70,3 +70,7 @@ uv run python -m policyguard.live_client <resource-id> --expect blocked --reason
 ```
 
 Both commands verify the persisted audit, source version, analyzer policy version, and whether the request ID has a downstream receipt. The first must return `ALLOW / RECEIVED` with a receipt. The second must return `REVIEW_REQUIRED / NOT_SENT` without one. Match the request IDs in the terminal to the corresponding timestamps and decisions in **Live transfer audit**. Restore the analyzer approval only if its handling profile has been verified.
+
+## Monitored analyzer and blast radius
+
+The optional Phase 3 analyzer uses a separate policy binding and the same local analyzer process. Set the URL and optional loopback fixture trust certificate following the [Phase 3 demonstration](PHASE3_DEMO.md). Confirm the GitHub source review independently from the destination review.
