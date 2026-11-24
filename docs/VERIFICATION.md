@@ -72,4 +72,24 @@ The separate automated confidential-flow test uses a mocked GitHub file read wit
 - `npm.cmd --prefix frontend run lint` and `npm.cmd --prefix frontend run build` passed.
 - The automated Phase 3 scenario uses genuine MCP calls to the Live gateway and the local analyzer. One variant uses mocked HTTP. The second uses the actual serving process implementation on loopback with TLS and a trusted development certificate. Both use a mocked GitHub file read. On v1 the confidential transfer was delivered. A normal refresh detected v2 and committed the automatic restriction. The same request returned REVIEW_REQUIRED / AI_TRAINING_CONFLICT / NOT_SENT without restarting the gateway, invoking the connector again, or adding a receipt. Public and unrelated workflows were allowed. The impact API reported one affected and restricted workflow, one unaffected workflow, and one historical review candidate, backed by the request ID for the prior delivery.
 - In the running Live environment, the real fetcher retrieved GitHub's policy and the loopback HTTPS fixture. The fictional analyzer observed v1. After its v1 review, the official credentialed GitHub connector transferred test.txt through workflow 2 to the monitored analyzer. The analyzer returned six words and PostgreSQL recorded receipt 0c90e038-bfaf-4716-92d8-bc6bf79ba8ca. The trusted classification for this credentialed check was PUBLIC.
-- The distinct confidential fixture was committed locally as 3861e1cdf2b131c6bece049115215fe1f0ebf76f. The credentialed confidential run remains pending fixture-only push authorization and verification of the applicable GitHub source terms. The running fictional destination was left at approved v1. Browser visual interaction was not verified.
+- At the end of the initial Phase 3 pass, the distinct confidential fixture was committed locally as 3861e1cdf2b131c6bece049115215fe1f0ebf76f and the fictional destination was left at approved v1. The subsequent real run is recorded below.
+
+## Final credentialed confidential run
+
+The one-line fixture contains exclusively fictional project text. After explicit authorization, only commit `3861e1cdf2b131c6bece049115215fe1f0ebf76f` was pushed to `binarybranch30/policyguard-live-fixture` on `main`. The operator attested that the applicable GitHub account terms or settings satisfy the no-training rule. The real GitHub policy refresh returned v1 unchanged. The source review recorded the operator's attestation. The allowlisted official GitHub MCP server v2.2.0 used the existing read-only credential.
+
+Resource `github_confidential_fixture` was registered as CONFIDENTIAL with workflow 4 to `fictional_analyzer`. The Live MCP session used identical arguments for the first two rows. After the first call, only the fictional HTTPS fixture state changed. The ordinary authenticated refresh observed v2 and automatically invalidated the analyzer approval. There were no manual destination review writes in this run. The gateway stayed at PID 34332.
+
+| Request | Analyzer policy | Decision and delivery | Reason | Request ID | Total receipts |
+| --- | --- | --- | --- | --- | --- |
+| Confidential fixture | v1 | ALLOW / RECEIVED | POLICY_APPROVED | `c786181a-7eaf-41ab-91df-6da860c770ef` | 3 |
+| Identical confidential retry | v2 | REVIEW_REQUIRED / NOT_SENT | AI_TRAINING_CONFLICT | `874c30ad-7f2c-461f-88ad-e00bfd2f805e` | 3 |
+| Public control | v2 | ALLOW / RECEIVED | PUBLIC_TRANSFER_ALLOWED | `3e8818ac-a01b-4c6b-bab4-a9efb2e1414b` | 4 |
+
+The pre-run total was 2. PostgreSQL held a receipt for the nine-word confidential delivery and none for its retry. The retry returned no analysis. The public delivery counted six words. All three request IDs were visible through the Live dashboard API, and none appeared in Demo audit.
+
+Live impact for change 4 returned one affected and restricted workflow, one unaffected workflow, and one historical review candidate. The candidate links to the v1 confidential delivery above. The audit identified the retry's decision origin as POLICY_DRIFT and linked change 4. The fixture uses genuine HTTPS with a trusted development certificate and fictional terms. The file reads used real GitHub MCP and the analyzer ran locally. There were no mocks in this run.
+
+Browser inspection reached the existing dashboard tab, then computer use was stopped with Escape. A full interaction pass was not completed. Use the browser checklist in [FINAL_DEMO_RUNBOOK.md](FINAL_DEMO_RUNBOOK.md). The fixture remains on v2 for evidence inspection.
+
+Final checks passed with 11 tests on SQLite and 11 on dedicated PostgreSQL test databases, including the real TLS fixture and MCP integration cases. Frontend lint and production build passed. Through the running dashboard proxy, an unchanged fixture refresh stayed at v2, an intentionally unavailable fixture surfaced FETCH_FAILED without changing the version or review state, and the recovered fixture still returned v2 unchanged.
