@@ -2,6 +2,7 @@
 
 import { Activity, ArrowDownUp, CheckCircle2, CircleAlert, FileText, FlaskConical, Play, RotateCcw, Shield, ShieldCheck, ShieldX } from "lucide-react";
 import { useEffect, useState } from "react";
+import LiveDashboard from "./live";
 
 type Service = { id: string; name: string; status: string; source: string; enabled: boolean; current_version: number | null; verified_no_training: boolean; last_checked: string | null; reason: string };
 type Version = { id: number; number: number; source: string };
@@ -47,6 +48,18 @@ function Status({ value }: { value: string }) {
 }
 
 export default function Dashboard() {
+  const [live, setLive] = useState(false);
+  return <>
+    <div className="mode-bar"><div className="shell mode-inner" role="group" aria-label="Dashboard mode">
+      <button className={live ? "ghost" : "secondary"} aria-pressed={!live} onClick={() => setLive(false)}>Demo Mode</button>
+      <button className={live ? "secondary" : "ghost"} aria-pressed={live} onClick={() => setLive(true)}>Live Mode</button>
+      <span>{live ? "Observed data" : "Synthetic data"}</span>
+    </div></div>
+    {live ? <LiveDashboard /> : <DemoDashboard />}
+  </>;
+}
+
+function DemoDashboard() {
   const [data, setData] = useState<Snapshot>();
   const [result, setResult] = useState<Result>();
   const [busy, setBusy] = useState<Action | "refresh">();

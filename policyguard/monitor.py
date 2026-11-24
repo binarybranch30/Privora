@@ -33,6 +33,8 @@ class Clause(BaseModel):
     risk_category: Literal["training", "sharing", "retention", "processing", "opt_out", "unknown"]
     requires_review: bool
     reason: str
+    uncertainty: str = "Applicability to the account requires human verification."
+    review_action: str = "Verify the agreement, account settings, and exact policy version."
 
 
 CLAUSES = TypeAdapter(list[Clause])
@@ -129,7 +131,16 @@ async def fetch_policy(url):
     return normalize("\n".join(paragraphs) if paragraphs else root.get_text(" ", strip=True))
 
 
-async def observe(db, service: Service, content: str, extractor):
+def changed_passages(previous, content):
+    old_lines = previous.splitlines()
+    new_lines = content.splitlines()
+    diff = difflib.SequenceMatcher(None, old_lines, new_lines)
+    return [
+        {"old": "\n".join(old_lines[i:j]), "new": "\n".join(new_lines[k:l])}
+        for tag, i, j, k, l in diff.get_opcodes() if tag != "equal"
+    ]
+
+async def observe(db, service: Service, content: str, extractor, *, organization_id="demo-org"):
     content = normalize(content)
     if not content:
         raise ValueError("Policy is empty")
@@ -139,18 +150,12 @@ async def observe(db, service: Service, content: str, extractor):
     if previous and previous.digest == digest and previous.source == service.source:
         return previous, None
 
-    old_lines = previous.content.splitlines() if previous else []
-    new_lines = content.splitlines()
-    diff = difflib.SequenceMatcher(None, old_lines, new_lines)
-    passages = [
-        {"old": "\n".join(old_lines[i:j]), "new": "\n".join(new_lines[k:l])}
-        for tag, i, j, k, l in diff.get_opcodes() if tag != "equal"
-    ]
+    passages = changed_passages(previous.content if previous else "", content)
     service.current_version = (service.current_version or 0) + 1
     service.approved_version = None
     service.verified_no_training = False
     service.status = "REVIEW_REQUIRED"
-    rule = db.get(Rule, "demo-org")
+    rule = db.get(Rule, organization_id)
     training_signal = any(re.search(r"train|improve.{0,30}model", passage["old"] + " " + passage["new"], re.I) for passage in passages)
     service.reason = "AI_TRAINING_CONFLICT" if rule and rule.no_training and training_signal else "POLICY_REVIEW_REQUIRED"
 

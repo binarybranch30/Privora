@@ -9,3 +9,5 @@ node_modules/
 next-env.d.ts
 *.tsbuildinfo
 *.log
+.env.live
+.env.demo-runtime

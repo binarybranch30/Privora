@@ -2,66 +2,21 @@ import asyncio
 import os
 import secrets
 from contextlib import asynccontextmanager
-from datetime import datetime
 from typing import Annotated, Literal
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select, text
+from pydantic import BaseModel, Field
+from sqlalchemy import func, inspect, select, text
 
 from .db import Audit, Change, Receipt, Review, Rule, Service, Version, database_url, now, sessions
 from .demo import reset
 from .gateway import ToolDecision, call_gateway, gateway_server, locked_service
-from .monitor import DEMO_SERVICE, DRIFT, Clause, configured_extractor, fetch_policy, observe
+from .monitor import DEMO_SERVICE, DRIFT, configured_extractor, fetch_policy, observe
+from .views import AuditView, ChangeView, ServiceView, VersionView
+from dotenv import load_dotenv
 
-
-class Row(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-
-class ServiceView(Row):
-    id: str
-    name: str
-    source: str
-    enabled: bool
-    status: str
-    current_version: int | None
-    last_checked: datetime | None
-    verified_no_training: bool
-    reason: str
-
-
-class VersionView(Row):
-    id: int
-    service_id: str
-    number: int
-    source: str
-    digest: str
-    observed_at: datetime
-    content: str
-
-
-class ChangeView(Row):
-    id: int
-    service_id: str
-    previous_id: int | None
-    version_id: int
-    passages: list[dict[str, str]]
-    clauses: list[Clause]
-    analysis_status: str
-    enforcement: str
-    reason: str
-    rule: str
-    observed_at: datetime
-
-
-class AuditView(ToolDecision):
-    model_config = ConfigDict(from_attributes=True)
-
-    timestamp: datetime
-    destination: str
-    operation: str
+load_dotenv()
 
 
 class Health(BaseModel):
@@ -105,6 +60,10 @@ def create_app(url=None, *, demo_mode=None, extractor=None):
 
     @asynccontextmanager
     async def lifespan(_):
+        from .live_models import LiveIdentity
+        with db_factory() as db:
+            if inspect(db.connection()).has_table("live_identity") and db.get(LiveIdentity, 1):
+                raise RuntimeError("The Demo backend cannot use a Live database")
         try:
             async with gateway.session_manager.run():
                 yield
@@ -174,7 +133,7 @@ def create_app(url=None, *, demo_mode=None, extractor=None):
     @app.post("/api/admin/services/{service_id}/monitor", dependencies=[Depends(admin)])
     async def monitor(service_id: str) -> Observation:
         source = os.getenv("POLICY_SOURCE_URL")
-        if service_id != DEMO_SERVICE or not source:
+        if demo_mode or service_id != DEMO_SERVICE or not source:
             raise HTTPException(404, "No configured policy source for this service")
         try:
             async with asyncio.timeout(20):

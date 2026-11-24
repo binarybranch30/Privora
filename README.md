@@ -54,3 +54,7 @@ Tests default to an isolated SQLite database. Set `TEST_DATABASE_URL` to a dedic
 - [API contracts](docs/API_CONTRACTS.md)
 - [Team workflow](docs/TEAM_WORKFLOW.md)
 - [Demo script](docs/DEMO_SCRIPT.md)
+
+## Phase 2 Live Mode
+
+Run the existing Demo backend and a separate Live backend to use the dashboard mode selector. Live requires its own PostgreSQL database and role, its own administrative and MCP credentials, and explicit GitHub connector configuration. Follow the [Live setup guide](docs/LIVE_SETUP.md).

@@ -109,3 +109,16 @@ td small { display: block; margin-top: 3px; }
   html { scroll-behavior: auto; }
   button { transition: none; }
 }
+.mode-bar { background: #14171b; border-bottom: 1px solid var(--line); }
+.mode-inner, .live-toolbar { display: flex; align-items: center; gap: 8px; padding-block: 8px; }
+.mode-inner span, .live-toolbar span { color: var(--muted); font-size: .875rem; }
+.live-toolbar { justify-content: space-between; }
+.live-panel { padding: 16px; margin-bottom: 10px; }
+.live-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-top: 12px; }
+.live-form label { display: grid; gap: 4px; color: var(--muted); font-size: .9rem; }
+.live-form input:not([type=checkbox]), .live-form select, .live-form textarea {
+  min-height: 38px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px; color: var(--text); background: var(--canvas); max-width: 100%;
+}
+.live-form .live-check { display: flex; padding-bottom: 8px; }
+.live-row-actions button { margin: 2px; }
+.live-panel pre { max-height: 20rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -1,11 +1,10 @@
 import os
 from datetime import datetime, timezone
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
-load_dotenv()
 
 
 def now():
@@ -103,7 +102,7 @@ class Review(Base):
 
 
 def database_url():
-    return os.getenv("DATABASE_URL", "sqlite:///./policyguard.db")
+    return os.getenv("DATABASE_URL") or dotenv_values(".env").get("DATABASE_URL") or "sqlite:///./policyguard.db"
 
 
 def sessions(url=None):
