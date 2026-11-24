@@ -40,7 +40,13 @@ flowchart LR
 
 ## Screenshots / Product Preview
 
-The running dashboard was opened for capture. Browser automation stopped before screenshots could be saved, so this section has no images yet. The [browser checklist](docs/FINAL_DEMO_RUNBOOK.md#browser-checklist-and-recording-fallback) covers the dashboard overview and mode selector, policy comparison, blast radius, and Live audit.
+**Dashboard and mode selector.** Demo Mode shows the synthetic workflow, gateway status, and downstream analyzer receipts.
+
+![PolicyGuard dashboard overview showing the Demo and Live mode selector and analyzer receipts](docs/assets/screenshots/demo-dashboard-overview.jpg)
+
+**Policy comparison and transfer audit.** Demo Mode highlights the change from v1 to v2. The audit shows the confidential transfer held after the policy change and the public transfer allowed under v2.
+
+![Demo policy comparison showing highlighted clauses and an audit with allowed and held transfers](docs/assets/screenshots/demo-policy-comparison.jpg)
 
 ## Quick start
 
