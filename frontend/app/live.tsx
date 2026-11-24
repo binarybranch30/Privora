@@ -6,7 +6,7 @@ import { FileText, ShieldCheck } from "lucide-react";
 type Service = { id: string; name: string; status: string; current_version: number | null; source: string; last_checked: string | null; last_attempt: string | null; fetch_status: string };
 type Version = { id: number; service_id: string; number: number; observed_at: string; source: string; content: string };
 type Change = { id: number; service_id: string; analysis_status: string; rule: string; reason: string; passages: { old: string; new: string }[]; clauses: { topic: string; new_interpretation: string; reason: string; uncertainty: string; review_action: string }[] };
-type Audit = { request_id: string; resource_id: string | null; source_service: string | null; source_version: number | null; decision: string; delivery: string; reason: string; timestamp: string };
+type Audit = { request_id: string; resource_id: string | null; classification: string | null; source_service: string | null; source_version: number | null; destination: string; destination_profile: string | null; policy_version: number | null; decision: string; delivery: string; reason: string; timestamp: string };
 type Historical = { service_id: string; release: string; policy_url: string | null; archived_at: string; imported_at: string; content: string; passages: { old: string; new: string }[] };
 type Dashboard = {
   services: Service[]; versions: Version[]; changes: Change[]; audit: Audit[]; archive: Historical[];
@@ -168,9 +168,15 @@ export default function LiveDashboard() {
       </section>
       <section className="section">
         <h2>Live transfer audit</h2>
-        <div className="panel table-wrap"><table><thead><tr><th>Time</th><th>Resource</th><th>Source policy</th><th>Decision</th><th>Reason</th><th>Delivery</th></tr></thead><tbody>
-          {data.audit.map((row) => <tr key={row.request_id}><td>{time(row.timestamp)}</td><td>{row.resource_id ?? "—"}</td><td>{row.source_service ?? "—"}{row.source_version ? " · v" + row.source_version : ""}</td><td>{label(row.decision)}</td><td><code>{row.reason}</code></td><td>{label(row.delivery)}</td></tr>)}
-          {!data.audit.length && <tr><td colSpan={6} className="empty">No Live transfers recorded.</td></tr>}
+        <div className="panel table-wrap"><table><thead><tr><th>Time / request ID</th><th>Resource</th><th>Source policy</th><th>Analyzer policy</th><th>Decision</th><th>Reason</th><th>Delivery</th></tr></thead><tbody>
+          {data.audit.map((row) => <tr key={row.request_id}>
+            <td>{time(row.timestamp)}<small><code>{row.request_id}</code></small></td>
+            <td>{row.resource_id ?? "—"}{row.classification && <small>{label(row.classification)}</small>}</td>
+            <td>{row.source_service ?? "—"}{row.source_version ? " · v" + row.source_version : ""}</td>
+            <td>{row.destination_profile ?? row.destination}{row.policy_version ? " · v" + row.policy_version : ""}</td>
+            <td>{label(row.decision)}</td><td><code>{row.reason}</code></td><td>{label(row.delivery)}</td>
+          </tr>)}
+          {!data.audit.length && <tr><td colSpan={7} className="empty">No Live transfers recorded.</td></tr>}
         </tbody></table></div>
       </section>
     </>}

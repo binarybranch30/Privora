@@ -12,12 +12,13 @@ from sqlalchemy import func, select
 
 from policyguard.api import create_app
 from policyguard.db import Audit, Receipt, Service, sessions
-from policyguard.gateway import invoke
+from policyguard.gateway import ToolDecision, invoke
 from policyguard.live_api import bootstrap, create_live_app
 from policyguard.live_archive import import_archive
 from policyguard.live_config import LiveSettings
 from policyguard.live_connector import github_text
 from policyguard.live_fetch import FetchError, fetch_live_policy
+from policyguard.live_client import verify_transfer
 
 ORIGIN = "http://localhost:8001"
 URL = "https://policy.example/privacy"
@@ -157,6 +158,21 @@ async def test_live_and_demo_isolation(tmp_path):
             assert await review("github") == "APPROVED"
             allowed = await transfer()
             assert allowed["delivery"] == "RECEIVED" and count(Receipt) == 1 and len(reads) == 1
+            with live_db() as db:
+                evidence = verify_transfer(db, "sample", ToolDecision.model_validate(allowed), "allowed", word_count=4)
+                assert evidence == {
+                    "analyzer_receipt": True, "resource_id": "sample", "source_service": "github",
+                    "source_policy_version": 1, "destination_profile": "local-word-count-v1",
+                    "destination_policy_version": 1,
+                }
+            assert await review("local_analyzer", applicability="UNKNOWN") == "REVIEW_REQUIRED"
+            denied = await transfer()
+            with live_db() as db:
+                evidence = verify_transfer(db, "sample", ToolDecision.model_validate(denied), "blocked",
+                                           "CONTRACT_APPLICABILITY_UNKNOWN")
+                assert evidence["analyzer_receipt"] is False
+            assert count(Receipt) == 1 and len(reads) == 1
+            assert await review("local_analyzer") == "APPROVED"
             fixture["unavailable"] = True
             assert (await refresh())["status"] == "POLICY_UNAVAILABLE"
             assert (await transfer())["reason"] == "SOURCE_POLICY_UNAVAILABLE"
@@ -167,7 +183,7 @@ async def test_live_and_demo_isolation(tmp_path):
             assert denied["decision"] == "REVIEW_REQUIRED" and denied["delivery"] == "NOT_SENT"
             assert count(Receipt) == 1 and len(reads) == 1
             assert (await transfer("unregistered"))["reason"] == "UNKNOWN_DOCUMENT"
-            assert count(Audit) == 5
+            assert count(Audit) == 6
             archive = io.BytesIO()
             with zipfile.ZipFile(archive, "w") as dataset:
                 dataset.writestr("GitHub/Privacy Policy/2024-02-03T12-00-00Z.md", "Historical policy evidence.")
@@ -183,7 +199,7 @@ async def test_live_and_demo_isolation(tmp_path):
                 assert (await demo_http.post("/api/demo/reset")).status_code == 200
                 assert [row["id"] for row in (await demo_http.get("/api/services")).json()] == ["external_analyzer"]
                 assert (await demo_http.get("/api/dashboard", headers=headers)).status_code == 404
-            assert count(Audit) == 5 and count(Receipt) == 1
+            assert count(Audit) == 6 and count(Receipt) == 1
 
 
 async def test_github_connector_rejects_wrong_repository_before_start():

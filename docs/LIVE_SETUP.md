@@ -54,3 +54,19 @@ Pass the original policy URL when documented for the collection. The optional UR
 1. Install the official GitHub MCP server binary from the verified [v2.2.0 release](https://github.com/github/github-mcp-server/releases/tag/v2.2.0). Set its absolute path in `LIVE_GITHUB_COMMAND`. Configure a fine-grained token for a designated test repository with Contents read permission and set `LIVE_GITHUB_REPO` to that repository's exact `owner/repo`. Keep the token in the ignored Live settings.
 2. Register and refresh the direct policy URL in `LIVE_GITHUB_POLICY_URL`. Review the applicable account terms and opt-out status. Review and approve the local analyzer's handling profile. Use a small regular Markdown or text file at an immutable commit in the designated repository. Register the path, SHA, and trusted classification in Live Mode.
 3. Run `uv run python -m policyguard.live_client <resource-id>` from the Live-configured terminal. A successful result reports `RECEIVED`; Live audit identifies the resource and both policy bases. Use a test fixture whose classification and policy applicability you can actually attest. The analyzer returns a word count and stores a local receipt.
+
+### Verify both outcomes on the same synthetic file
+
+Register the fixture as `CONFIDENTIAL` and keep the source review current for both requests. After approving the local analyzer, run:
+
+```powershell
+uv run python -m policyguard.live_client <resource-id> --expect allowed
+```
+
+If you know the fixture's word count, add `--word-count <count>` to check the analyzer output too. Then record a review for the same analyzer version with **Account applicability → Unknown**, using evidence that identifies this as a deliberate test hold. Repeat the same MCP request:
+
+```powershell
+uv run python -m policyguard.live_client <resource-id> --expect blocked --reason CONTRACT_APPLICABILITY_UNKNOWN
+```
+
+Both commands verify the persisted audit, source version, analyzer policy version, and whether the request ID has a downstream receipt. The first must return `ALLOW / RECEIVED` with a receipt. The second must return `REVIEW_REQUIRED / NOT_SENT` without one. Match the request IDs in the terminal to the corresponding timestamps and decisions in **Live transfer audit**. Restore the analyzer approval only if its handling profile has been verified.
