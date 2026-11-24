@@ -49,4 +49,19 @@ Browser visual and click verification was blocked by the computer-use runtime. T
 | HTTP requests through the running Next.js backend | Verified both mode routes, Live login and logout, absence of Live reset, and no Live state change from Demo reset |
 | PostgreSQL cross-mode access | Both scoped roles were denied when connecting to the other database |
 
-Tests mock GitHub repository file retrieval. The Live transfer test uses real gateway MCP messages and a real local stdio analyzer. It checks unknown applicability, fetch failure and policy drift, and confirms denied transfers neither read the file nor create a receipt. The credentialed GitHub repository read and model API call need operator configuration and remain unverified. Browser interaction was not verified in Phase 2.
+The automated Live transfer test mocks GitHub repository file retrieval and uses real gateway MCP messages and a real local stdio analyzer. It checks unknown applicability, fetch failure and policy drift, and confirms denied transfers neither read the file nor create a receipt. Browser interaction was not verified in Phase 2.
+
+## Credentialed GitHub Live transfer
+
+The authorized GitHub fixture `binarybranch30/policyguard-live-fixture` supplied `test.txt` at commit `38781134d2a78734278e7eee8f74f1fefaab8e80`. The official GitHub MCP server v2.2.0 used the scoped credential and the registered resource ID `github_synthetic_fixture`. The administrator classified the synthetic fixture as PUBLIC. This check did not attest GitHub account terms for confidential transfers.
+
+Both calls used the real Live Streamable HTTP MCP endpoint and the same tool arguments. GitHub's privacy statement refreshed successfully and remained at v1. The destination was the local controlled word-count analyzer under its version 1 handling profile.
+
+| Analyzer approval | Decision and delivery | Reason | Request ID | Receipts |
+| --- | --- | --- | --- | --- |
+| Approved | ALLOW / RECEIVED | PUBLIC_TRANSFER_ALLOWED | `701f4abb-4127-427c-88a1-c1d46c728d7f` | 1 |
+| Held for review | REVIEW_REQUIRED / NOT_SENT | DESTINATION_PROFILE_UNAPPROVED | `5767dab4-fb46-424e-b8c4-0388cdd91d02` | 1 |
+
+The local analyzer counted six words for the allowed request. The request had a persisted analyzer receipt. The held request had no receipt for its ID and no analysis result. Both records were verified through the running dashboard's Live API and against PostgreSQL. Neither request appeared in the Demo audit. Analyzer approval was restored after the test.
+
+The separate automated confidential-flow test uses a mocked GitHub file read with the real MCP gateway and analyzer. It verifies that unknown applicability and policy changes block forwarding. The credentialed workflow above used no mocked file read. The optional model API remains unverified.
