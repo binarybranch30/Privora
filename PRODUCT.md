@@ -1,4 +1,4 @@
-# PolicyGuard MCP
+# Privora MCP
 
 A single-organization dashboard for hackathon presenters and developers to inspect how provider policy changes affect individual MCP transfers. Its primary evidence is the provider clause, the gateway decision, and the downstream receipt count.
 

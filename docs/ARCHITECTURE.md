@@ -4,7 +4,7 @@
 flowchart LR
     P[Policy URL or fixture] --> M[Policy monitor]
     M --> D[(PostgreSQL)]
-    A[Agent] -->|MCP Streamable HTTP| G[PolicyGuard gateway]
+    A[Agent] -->|MCP Streamable HTTP| G[Privora gateway]
     U[Dashboard] -->|FastAPI| G
     G -->|MCP stdio| V[Private documents]
     V --> D

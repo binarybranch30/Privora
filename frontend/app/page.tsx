@@ -109,7 +109,7 @@ function DemoDashboard() {
   return (
     <>
       <header className="top"><div className="shell top-inner">
-        <a href="#overview" className="brand"><span className="brand-icon"><ShieldCheck size={20} /></span>PolicyGuard <small>MCP</small></a>
+        <a href="#overview" className="brand"><span className="brand-icon"><ShieldCheck size={20} /></span>Privora <small>MCP</small></a>
         <nav aria-label="Sections"><a href="#services">Services</a><a href="#changes">Policy changes</a><a href="#audit">Audit</a></nav>
         <button className="ghost refresh" disabled={!!busy} onClick={() => void act("refresh")}><RotateCcw size={15} /> Refresh</button>
       </div></header>

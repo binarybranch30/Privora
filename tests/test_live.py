@@ -10,21 +10,21 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from sqlalchemy import func, select
 
-from policyguard.api import create_app
-from policyguard.db import Audit, Receipt, Service, sessions
-from policyguard.gateway import ToolDecision, invoke
-from policyguard.live_api import bootstrap, create_live_app
-from policyguard.live_archive import import_archive
-from policyguard.live_config import LiveSettings
-from policyguard.live_connector import github_text
-from policyguard.live_fetch import FetchError, fetch_live_policy
-from policyguard.live_client import verify_transfer
+from privora.api import create_app
+from privora.db import Audit, Receipt, Service, sessions
+from privora.gateway import ToolDecision, invoke
+from privora.live_api import bootstrap, create_live_app
+from privora.live_archive import import_archive
+from privora.live_config import LiveSettings
+from privora.live_connector import github_text
+from privora.live_fetch import FetchError, fetch_live_policy
+from privora.live_client import verify_transfer
 
 ORIGIN = "http://localhost:8001"
 URL = "https://policy.example/privacy"
 ADMIN = "local-test-admin-secret-not-real"
 AGENT = "local-test-mcp-secret-not-real"
-MUTATION = {"X-PolicyGuard-Live": "1"}
+MUTATION = {"X-Privora-Live": "1"}
 
 
 def migrate(url):
@@ -107,8 +107,8 @@ async def test_live_and_demo_isolation(tmp_path):
             assert (await http.post("/api/session", json={"secret": AGENT}, headers=MUTATION)).status_code == 401
             assert (await http.post("/mcp/", headers={"Authorization": "Bearer " + ADMIN})).status_code == 401
             assert (await http.post("/api/session", json={"secret": ADMIN}, headers=MUTATION)).status_code == 200
-            token = http.cookies["policyguard_live_session"]
-            headers = MUTATION | {"Cookie": "policyguard_live_session=" + token}
+            token = http.cookies["privora_live_session"]
+            headers = MUTATION | {"Cookie": "privora_live_session=" + token}
             register = {"id": "github", "name": "GitHub", "url": URL}
             assert (await http.post("/api/services", headers={"Cookie": headers["Cookie"]}, json=register)).status_code == 403
             assert (await http.post("/api/services", headers=headers, json=register)).status_code == 201
@@ -213,7 +213,7 @@ async def test_github_connector_accepts_only_exact_resource(monkeypatch):
     from contextlib import asynccontextmanager
     from types import SimpleNamespace
 
-    from policyguard import live_connector
+    from privora import live_connector
 
     commit = "a" * 40
     uri = f"repo://org/test/sha/{commit}/contents/README.md"
@@ -260,7 +260,7 @@ async def test_github_connector_accepts_only_exact_resource(monkeypatch):
 def test_live_configuration_ignores_demo_database(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://policyguard:placeholder@localhost/policyguard")
     config = tmp_path / "live.env"
-    monkeypatch.setenv("POLICYGUARD_LIVE_CONFIG", str(config))
+    monkeypatch.setenv("PRIVORA_LIVE_CONFIG", str(config))
     content = f"LIVE_ADMIN_SECRET={ADMIN}\nLIVE_MCP_SECRET={AGENT}\n"
     config.write_text(content + "LIVE_DATABASE_URL=postgresql+psycopg://policyguard:placeholder@localhost/policyguard\n")
     with pytest.raises(ValueError, match="dedicated PostgreSQL database"):

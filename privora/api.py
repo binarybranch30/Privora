@@ -70,11 +70,11 @@ def create_app(url=None, *, demo_mode=None, extractor=None):
         finally:
             db_factory.kw["bind"].dispose()
 
-    app = FastAPI(title="PolicyGuard MCP", lifespan=lifespan)
+    app = FastAPI(title="Privora MCP", lifespan=lifespan)
     app.mount("/mcp", mcp_app)
 
     def admin(x_admin_token: Annotated[str | None, Header()] = None):
-        token = os.getenv("POLICYGUARD_ADMIN_TOKEN", "")
+        token = os.getenv("PRIVORA_ADMIN_TOKEN", "")
         if not token or not x_admin_token or not secrets.compare_digest(token.encode(), x_admin_token.encode()):
             raise HTTPException(403, "Local administrator token required")
 

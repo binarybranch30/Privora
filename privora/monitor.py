@@ -16,7 +16,7 @@ from .db import Change, Rule, Service, Version, now
 SAFE = "Customer-submitted documents are not used for AI model training."
 DRIFT = "Customer-submitted documents may be used to improve our AI models unless an applicable opt-out is enabled."
 DEMO_SERVICE = "external_analyzer"
-USER_AGENT = "PolicyGuardMCP"
+USER_AGENT = "PrivoraMCP"
 LIMIT = 512_000
 
 Topic = Literal["AI training", "Data sharing", "Data retention", "Third-party processing",

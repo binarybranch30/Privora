@@ -595,7 +595,7 @@ wheels = [
 ]
 
 [[package]]
-name = "policyguard-mcp"
+name = "privora-mcp"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

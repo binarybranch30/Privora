@@ -9,13 +9,13 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from sqlalchemy import func, select
 
-from policyguard.db import Receipt, Service, sessions
-from policyguard.gateway import invoke
-from policyguard.live_api import bootstrap, create_live_app
-from policyguard.live_config import LiveSettings
-from policyguard.live_fetch import fetch_live_policy
-from policyguard.live_policy import formatting_equivalent
-from policyguard.monitor import DRIFT, SAFE
+from privora.db import Receipt, Service, sessions
+from privora.gateway import invoke
+from privora.live_api import bootstrap, create_live_app
+from privora.live_config import LiveSettings
+from privora.live_fetch import fetch_live_policy
+from privora.live_policy import formatting_equivalent
+from privora.monitor import DRIFT, SAFE
 from test_live import ADMIN, AGENT, MUTATION, ORIGIN, URL, migrate
 from scripts.serve_policy_fixture import fixture_server
 
@@ -40,7 +40,7 @@ def local_https(tmp_path, request):
     cert, key, state = (tmp_path / name for name in ("fixture.crt", "fixture.key", "version.txt"))
     subprocess.run([
         openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
-        "-subj", "/CN=PolicyGuard Local Fixture", "-addext", "subjectAltName=IP:127.0.0.1",
+        "-subj", "/CN=Privora Local Fixture", "-addext", "subjectAltName=IP:127.0.0.1",
         "-keyout", str(key), "-out", str(cert),
     ], check=True, capture_output=True, timeout=15)
     state.write_text("1", encoding="ascii")
@@ -96,7 +96,7 @@ async def test_observed_destination_drift_and_impact(tmp_path, local_https):
         assert (await http.post(f"/api/services/{DESTINATION}/review", json={})).status_code == 401
         login = await http.post("/api/session", json={"secret": ADMIN}, headers=MUTATION)
         assert login.status_code == 200
-        headers = MUTATION | {"Cookie": "policyguard_live_session=" + http.cookies["policyguard_live_session"]}
+        headers = MUTATION | {"Cookie": "privora_live_session=" + http.cookies["privora_live_session"]}
 
         async def api(method, path, payload=None):
             response = await http.request(method, "/api/" + path, headers=headers, json=payload)

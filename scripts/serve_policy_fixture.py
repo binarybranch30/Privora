@@ -5,7 +5,7 @@ import ssl
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from policyguard.monitor import DRIFT, SAFE
+from privora.monitor import DRIFT, SAFE
 
 
 def fixture_server(cert, key, state, port):

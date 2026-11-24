@@ -26,7 +26,7 @@ class LiveSettings:
 
     @classmethod
     def load(cls):
-        path = Path(os.environ["POLICYGUARD_LIVE_CONFIG"])
+        path = Path(os.environ["PRIVORA_LIVE_CONFIG"])
         if not path.is_file():
             raise ValueError("Live settings file was not found")
         values = dotenv_values(path, interpolate=False)

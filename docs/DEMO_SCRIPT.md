@@ -9,4 +9,4 @@
 
 For a scripted rehearsal, run `uv run python -m scripts.verify_demo`. It resets the data and prints the observed decisions and receipt counts.
 
-For optional administrative review, set POLICYGUARD_ADMIN_TOKEN locally. POST to the review route with the matching X-Admin-Token header and version 2. Use verified_no_training=false with evidence that opt-out is unverified to record RESTRICTED. Use true only when applicable terms or account settings have been independently verified. The synthetic test can attest a verified fixture opt-out. Retry the same MCP request to see an approved transfer.
+For optional administrative review, set PRIVORA_ADMIN_TOKEN locally. POST to the review route with the matching X-Admin-Token header and version 2. Use verified_no_training=false with evidence that opt-out is unverified to record RESTRICTED. Use true only when applicable terms or account settings have been independently verified. The synthetic test can attest a verified fixture opt-out. Retry the same MCP request to see an approved transfer.

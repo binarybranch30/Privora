@@ -1,6 +1,6 @@
-# PolicyGuard final demo runbook
+# Privora final demo runbook
 
-Run commands from the PolicyGuard checkout in PowerShell. Keep the dashboard and both API processes on loopback. The monitored analyzer's terms are fictional. The repository file is synthetic and intentionally classified CONFIDENTIAL to exercise the real enforcement path.
+Run commands from the Privora checkout in PowerShell. Keep the dashboard and both API processes on loopback. The monitored analyzer's terms are fictional. The repository file is synthetic and intentionally classified CONFIDENTIAL to exercise the real enforcement path.
 
 ## Preflight and startup
 
@@ -9,9 +9,9 @@ Use the PostgreSQL roles described in the [Live setup guide](LIVE_SETUP.md). Kee
 | Process | Environment or settings names |
 | --- | --- |
 | Demo API | `DATABASE_URL`, `DEMO_MODE` |
-| Live API and CLI | `POLICYGUARD_LIVE_CONFIG` |
+| Live API and CLI | `PRIVORA_LIVE_CONFIG` |
 | Live settings file | `LIVE_DATABASE_URL`, `LIVE_ADMIN_SECRET`, `LIVE_MCP_SECRET`, `LIVE_POLICY_HOSTS`, `LIVE_GITHUB_POLICY_URL`, `LIVE_GITHUB_COMMAND`, `LIVE_GITHUB_TOKEN`, `LIVE_GITHUB_REPO`, `LIVE_ANALYZER_POLICY_URL`, `LIVE_POLICY_FIXTURE_CA` |
-| Dashboard | `POLICYGUARD_API_ORIGIN` only if overriding the built-in Demo origin |
+| Dashboard | `PRIVORA_API_ORIGIN` only if overriding the built-in Demo origin |
 
 Keep credentials in the machine-local ignored settings. The GitHub token needs Contents read permission on the designated fixture repo.
 
@@ -36,15 +36,15 @@ With the scoped Demo `DATABASE_URL` set locally, start Demo in terminal 2:
 
 ```powershell
 $env:DEMO_MODE = 'true'
-uv run uvicorn policyguard.api:app --host 127.0.0.1 --port 8000
+uv run uvicorn privora.api:app --host 127.0.0.1 --port 8000
 ```
 
 Start Live in terminal 3. Keep this process running for the entire verification.
 
 ```powershell
-$env:POLICYGUARD_LIVE_CONFIG = '.env.live'
-uv run python -m policyguard.live_setup migrate
-uv run uvicorn policyguard.live_api:app_factory --factory --host 127.0.0.1 --port 8001
+$env:PRIVORA_LIVE_CONFIG = '.env.live'
+uv run python -m privora.live_setup migrate
+uv run uvicorn privora.live_api:app_factory --factory --host 127.0.0.1 --port 8001
 ```
 
 Start the dashboard in terminal 4:
@@ -53,7 +53,7 @@ Start the dashboard in terminal 4:
 npm.cmd --prefix frontend run start -- --hostname 127.0.0.1
 ```
 
-In the presentation terminal, set `POLICYGUARD_LIVE_CONFIG` as in terminal 3. Open the dashboard at `http://127.0.0.1:3000` and sign into Live before sharing the screen.
+In the presentation terminal, set `PRIVORA_LIVE_CONFIG` as in terminal 3. Open the dashboard at `http://127.0.0.1:3000` and sign into Live before sharing the screen.
 
 ## Rehearse and present
 
@@ -62,7 +62,7 @@ In the presentation terminal, set `POLICYGUARD_LIVE_CONFIG` as in terminal 3. Op
 3. Run the allowed request below. Highlight `ALLOW / RECEIVED`, nine words, the request ID and its receipt. This is the only confidential delivery in the pair.
 
 ```powershell
-uv run python -m policyguard.live_client github_confidential_fixture --destination fictional_analyzer --expect allowed --word-count 9
+uv run python -m privora.live_client github_confidential_fixture --destination fictional_analyzer --expect allowed --word-count 9
 ```
 
 4. Change only the HTTPS fixture state, then use **Refresh policy** on **Fictional monitored analyzer** in Live Mode. Leave the gateway running and do not edit the approval. Wait for the replacement clause and review-required status.
@@ -74,13 +74,13 @@ uv run python -m policyguard.live_client github_confidential_fixture --destinati
 5. Retry the identical MCP operation. The expectation flags verify the result locally. Expected output is `REVIEW_REQUIRED / AI_TRAINING_CONFLICT / NOT_SENT`, no analysis, and `analyzer_receipt: false` for the retry.
 
 ```powershell
-uv run python -m policyguard.live_client github_confidential_fixture --destination fictional_analyzer --expect blocked --reason AI_TRAINING_CONFLICT
+uv run python -m privora.live_client github_confidential_fixture --destination fictional_analyzer --expect blocked --reason AI_TRAINING_CONFLICT
 ```
 
 6. Run the public control after the blocked attempt. Expect `ALLOW / RECEIVED` and six words.
 
 ```powershell
-uv run python -m policyguard.live_client github_synthetic_fixture --destination fictional_analyzer --expect allowed --word-count 6
+uv run python -m privora.live_client github_synthetic_fixture --destination fictional_analyzer --expect allowed --word-count 6
 ```
 
 7. Under **Observed policy changes**, show the old and new clauses, versions, warning, and organization rule. Open **View blast radius**. On the clean verified run it shows one affected and restricted workflow, one unaffected workflow, and one historical review candidate. Expand both workflows and match the prior confidential delivery to its Live audit ID. Later rehearsals can accumulate more prior deliveries. Historical candidates are records to review.

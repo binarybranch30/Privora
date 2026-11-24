@@ -1,8 +1,8 @@
 from alembic import context
 from sqlalchemy import create_engine
 
-from policyguard.db import Base, database_url
-from policyguard import live_models
+from privora.db import Base, database_url
+from privora import live_models
 
 url = context.config.attributes.get("database_url") or database_url()
 

@@ -1,10 +1,10 @@
-# PolicyGuard MCP
+# Privora MCP
 
 **Turning changing privacy policies into enforceable AI-agent permissions.**
 
 Built for **wHACKiest 2026** · **Make MCP Matter — Less Magic, More Utility**
 
-An AI agent may have permission to send confidential data to a provider. If that provider changes its privacy terms, a static permission list can keep allowing transfers under an outdated approval. PolicyGuard tracks the terms a workflow relies on and uses the current policy state to decide whether an MCP transfer can proceed. In the verified Live run, an observed clause change blocked the same confidential request without a gateway restart or an additional analyzer receipt.
+An AI agent may have permission to send confidential data to a provider. If that provider changes its privacy terms, a static permission list can keep allowing transfers under an outdated approval. Privora tracks the terms a workflow relies on and uses the current policy state to decide whether an MCP transfer can proceed. In the verified Live run, an observed clause change blocked the same confidential request without a gateway restart or an additional analyzer receipt.
 
 ## What works
 
@@ -20,7 +20,7 @@ An AI agent may have permission to send confidential data to a provider. If that
 
 ```mermaid
 flowchart LR
-    Agent["AI agent / MCP client"] -->|"MCP · Streamable HTTP"| Gateway["PolicyGuard MCP gateway"]
+    Agent["AI agent / MCP client"] -->|"MCP · Streamable HTTP"| Gateway["Privora MCP gateway"]
     Gateway --> Engine["Deterministic policy engine"]
     Engine -->|"Read policy, rule and workflow state"| DB[("PostgreSQL")]
     Gateway -->|"Allowed · private MCP stdio"| Source["Private data source / GitHub MCP"]
@@ -42,7 +42,7 @@ flowchart LR
 
 **Dashboard and mode selector.** Demo Mode shows the synthetic workflow, gateway status, and downstream analyzer receipts.
 
-![PolicyGuard dashboard overview showing the Demo and Live mode selector and analyzer receipts](docs/assets/screenshots/demo-dashboard-overview.jpg)
+![Privora dashboard overview showing the Demo and Live mode selector and analyzer receipts](docs/assets/screenshots/demo-dashboard-overview.jpg)
 
 **Policy comparison and transfer audit.** Demo Mode highlights the change from v1 to v2. The audit shows the confidential transfer held after the policy change and the public transfer allowed under v2.
 
@@ -68,12 +68,14 @@ npm.cmd ci --prefix frontend
 
 The supplied Compose database listens locally on port `55439`. The Demo backend reads `DATABASE_URL` and `DEMO_MODE` from `.env`. For a Docker-free Demo, use `DATABASE_URL=sqlite:///./policyguard.db` before applying migrations.
 
+Existing database and role names still use the `policyguard` prefix so current data and credentials remain usable. For an existing setup, update any exported project-specific settings to `PRIVORA_ADMIN_TOKEN`, `PRIVORA_API_ORIGIN`, and `PRIVORA_LIVE_CONFIG` as applicable. Direct Live dashboard API clients should send `X-Privora-Live: 1` for mutations.
+
 ### 2. Start Demo and the dashboard
 
 Use separate terminals from the checkout root.
 
 ```powershell
-uv run uvicorn policyguard.api:app --host 127.0.0.1 --port 8000
+uv run uvicorn privora.api:app --host 127.0.0.1 --port 8000
 ```
 
 ```powershell
@@ -86,16 +88,16 @@ Open the [dashboard](http://127.0.0.1:3000), choose **Demo Mode**, and click **R
 uv run python -m scripts.verify_demo
 ```
 
-This command resets Demo data. The gateway starts the downstream MCP servers as private stdio subprocesses. For standalone MCP inspection, use `uv run python -m policyguard.downstream documents` or `uv run python -m policyguard.downstream analyzer`.
+This command resets Demo data. The gateway starts the downstream MCP servers as private stdio subprocesses. For standalone MCP inspection, use `uv run python -m privora.downstream documents` or `uv run python -m privora.downstream analyzer`.
 
 ### 3. Add Live Mode
 
 Follow the [Live setup guide](docs/LIVE_SETUP.md) to create scoped database roles and copy `.env.live.example` to the ignored `.env.live`. Configure `LIVE_DATABASE_URL`, `LIVE_ADMIN_SECRET`, `LIVE_MCP_SECRET`, the policy allowlist and GitHub connector settings. For the fictional analyzer, configure its policy URL and dedicated development certificate as described in the [final demo runbook](docs/FINAL_DEMO_RUNBOOK.md). Keep the credentials out of Git.
 
 ```powershell
-$env:POLICYGUARD_LIVE_CONFIG = '.env.live'
-uv run python -m policyguard.live_setup migrate
-uv run uvicorn policyguard.live_api:app_factory --factory --host 127.0.0.1 --port 8001
+$env:PRIVORA_LIVE_CONFIG = '.env.live'
+uv run python -m privora.live_setup migrate
+uv run uvicorn privora.live_api:app_factory --factory --host 127.0.0.1 --port 8001
 ```
 
 Choose **Live Mode** in the same dashboard and sign in with the local Live admin secret. Live MCP clients connect to `http://localhost:8001/mcp/` with their separate bearer credential. Keep both backends on loopback with one worker per instance.
@@ -133,7 +135,7 @@ For a full PostgreSQL test run, set `TEST_DATABASE_URL`, `TEST_LIVE_DATABASE_URL
 
 ## Security model
 
-PolicyGuard controls transfers it mediates through its MCP gateway. A client supplies a registered resource ID, while trusted metadata defines classification and the permitted repository path and commit. The deterministic engine checks account applicability, organization rules, policy freshness, and exact-version approval. A model can provide analysis for review but has no authority to grant access.
+Privora controls transfers it mediates through its MCP gateway. A client supplies a registered resource ID, while trusted metadata defines classification and the permitted repository path and commit. The deterministic engine checks account applicability, organization rules, policy freshness, and exact-version approval. A model can provide analysis for review but has no authority to grant access.
 
 | Decision | Meaning |
 | --- | --- |
@@ -141,13 +143,13 @@ PolicyGuard controls transfers it mediates through its MCP gateway. A client sup
 | `BLOCK` | The operation is denied by an applicable rule or boundary. |
 | `REVIEW_REQUIRED` | Permission is held pending review or current evidence. The confidential transfer is withheld. |
 
-A public T&C page may not reflect an account agreement, applicable product scope, or opt-out. Verify those separately before approval. Direct uploads, other connectors, and transfers outside the gateway are outside its enforcement boundary. PolicyGuard is a research and hackathon prototype with a local trust model. Enterprise DLP certification and production deployment assurance are outside its scope. See the [security model](docs/SECURITY_MODEL.md).
+A public T&C page may not reflect an account agreement, applicable product scope, or opt-out. Verify those separately before approval. Direct uploads, other connectors, and transfers outside the gateway are outside its enforcement boundary. Privora is a research and hackathon prototype with a local trust model. Enterprise DLP certification and production deployment assurance are outside its scope. See the [security model](docs/SECURITY_MODEL.md).
 
 ## Repository and contributing
 
 | Path | Responsibility |
 | --- | --- |
-| `policyguard/` | FastAPI, MCP gateway and connectors, policy monitoring, decisions, and impact |
+| `privora/` | FastAPI, MCP gateway and connectors, policy monitoring, decisions, and impact |
 | `frontend/` | Next.js and TypeScript dashboard |
 | `migrations/` | Alembic migrations |
 | `scripts/` | Demo verifier and fictional HTTPS policy fixture |

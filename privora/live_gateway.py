@@ -70,7 +70,7 @@ def decision_origin(db, service, decision):
 
 
 def live_gateway(settings, db_factory, lock, read_file=github_text):
-    mcp = FastMCP("PolicyGuard Live", stateless_http=True, json_response=True, streamable_http_path="/")
+    mcp = FastMCP("Privora Live", stateless_http=True, json_response=True, streamable_http_path="/")
 
     @mcp.tool()
     async def analyze_document(document_id: str, destination_service: str) -> ToolDecision:

@@ -24,7 +24,7 @@ from .live_impact import Impact, policy_impact
 from .monitor import ChatExtractor, MockExtractor, changed_passages, observe
 
 LOG = logging.getLogger(__name__)
-COOKIE = "policyguard_live_session"
+COOKIE = "privora_live_session"
 PROFILE = "Local word-count analyzer. Content is processed in memory. No AI training, network transfer or body retention. Receipts contain only request IDs and times."
 Id = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]{0,79}$")]
 
@@ -190,7 +190,7 @@ def create_live_app(settings, *, fetch=fetch_live_policy, read_file=github_text,
                         await task
                 db_factory.kw["bind"].dispose()
 
-    app = FastAPI(title="PolicyGuard Live", lifespan=lifespan)
+    app = FastAPI(title="Privora Live", lifespan=lifespan)
     app.mount("/mcp", mcp_app)
 
     @app.middleware("http")
@@ -210,12 +210,12 @@ def create_live_app(settings, *, fetch=fetch_live_policy, read_file=github_text,
             raise HTTPException(401, "Sign in to Live Mode")
 
     def mutation(request: Request, _: Annotated[None, Depends(admin)]):
-        if request.headers.get("x-policyguard-live") != "1":
+        if request.headers.get("x-privora-live") != "1":
             raise HTTPException(403, "Live mutation header required")
 
     @app.post("/api/session")
     async def login(body: Login, request: Request, response: Response):
-        if request.headers.get("x-policyguard-live") != "1" or not matches(body.secret.get_secret_value(), settings.admin_secret):
+        if request.headers.get("x-privora-live") != "1" or not matches(body.secret.get_secret_value(), settings.admin_secret):
             raise HTTPException(401, "Invalid Live credentials")
         expired = [key for key, expiry in browser_sessions.items() if expiry <= time.monotonic()]
         for key in expired:

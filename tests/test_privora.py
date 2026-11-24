@@ -6,9 +6,9 @@ import pytest
 from alembic import command
 from alembic.config import Config
 
-from policyguard.api import create_app
-from policyguard.engine import evaluate
-from policyguard.gateway import call_gateway, subprocess_session
+from privora.api import create_app
+from privora.engine import evaluate
+from privora.gateway import call_gateway, subprocess_session
 
 DESTINATION = "external_analyzer"
 CONFIDENTIAL = {"document_id": "confidential_001", "destination_service": DESTINATION}
@@ -44,7 +44,7 @@ def database(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_real_mcp_drift_and_receipts(database, monkeypatch):
-    monkeypatch.setenv("POLICYGUARD_ADMIN_TOKEN", "local-integration-secret")
+    monkeypatch.setenv("PRIVORA_ADMIN_TOKEN", "local-integration-secret")
     app = create_app(database, demo_mode=True)
     async with app.router.lifespan_context(app):
         transport = httpx.ASGITransport(app=app)

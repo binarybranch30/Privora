@@ -45,7 +45,7 @@ async def invoke(session, name, arguments):
 @asynccontextmanager
 async def subprocess_session(server, database_url):
     params = StdioServerParameters(
-        command=sys.executable, args=["-m", "policyguard.downstream", server],
+        command=sys.executable, args=["-m", "privora.downstream", server],
         env={"DATABASE_URL": database_url},
     )
     async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
@@ -67,7 +67,7 @@ def locked_service(db, service_id):
 
 
 def gateway_server(db_factory, database_url, lock):
-    server = FastMCP("PolicyGuard", stateless_http=True, json_response=True, streamable_http_path="/")
+    server = FastMCP("Privora", stateless_http=True, json_response=True, streamable_http_path="/")
 
     @server.tool()
     async def analyze_document(document_id: str, destination_service: str) -> ToolDecision:

@@ -4,7 +4,7 @@ import asyncio
 
 import httpx
 
-from policyguard.gateway import call_gateway
+from privora.gateway import call_gateway
 
 ORIGIN = "http://localhost:8000"
 CONFIDENTIAL = {"document_id": "confidential_001", "destination_service": "external_analyzer"}

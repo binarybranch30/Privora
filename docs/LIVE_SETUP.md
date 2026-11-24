@@ -30,12 +30,12 @@ Keep the Compose superuser for migrations only. When starting Demo, set `DATABAS
 Copy `.env.live.example` to `.env.live`. Fill in the Live database URL and use two distinct high-entropy secrets of at least 24 characters for the dashboard and the agent endpoint. Enter them locally. Git ignores `.env.live`. Set a separate environment variable in the Live terminal:
 
 ```powershell
-$env:POLICYGUARD_LIVE_CONFIG = ".env.live"
-uv run python -m policyguard.live_setup migrate
-uv run uvicorn policyguard.live_api:app_factory --factory --host 127.0.0.1 --port 8001
+$env:PRIVORA_LIVE_CONFIG = ".env.live"
+uv run python -m privora.live_setup migrate
+uv run uvicorn privora.live_api:app_factory --factory --host 127.0.0.1 --port 8001
 ```
 
-Use `export POLICYGUARD_LIVE_CONFIG=.env.live` in Bash. Start the Demo backend and dashboard as described in the README. Select **Live Mode** and sign in with the Live admin secret. Register policy hosts in the settings allowlist before submitting URLs. Register a policy source and refresh it. Live also checks each registered direct source every 15 minutes. Confidential transfers require a successful observation no more than one hour old. Failed observations suspend transfers until a successful refresh. Changed observations need a new human review.
+Use `export PRIVORA_LIVE_CONFIG=.env.live` in Bash. Start the Demo backend and dashboard as described in the README. Select **Live Mode** and sign in with the Live admin secret. Register policy hosts in the settings allowlist before submitting URLs. Register a policy source and refresh it. Live also checks each registered direct source every 15 minutes. Confidential transfers require a successful observation no more than one hour old. Failed observations suspend transfers until a successful refresh. Changed observations need a new human review.
 
 The optional LLM is an OpenAI-compatible chat completions endpoint selected by the operator. Configure all three LLM settings together. Public policy text is the only input.
 
@@ -44,7 +44,7 @@ The optional LLM is an OpenAI-compatible chat completions endpoint selected by t
 Download the ZIP asset from a pinned, supported [France collection release](https://github.com/OpenTermsArchive/france-versions/releases) or [Contrib collection release](https://github.com/OpenTermsArchive/contrib-versions/releases). Use an existing Live service and the exact provider and terms directory names from the dataset. Example for a registered Apple service:
 
 ```powershell
-uv run python -m policyguard.live_setup import-archive apple path/to/france-collection-dataset-2026-11-23.zip https://github.com/OpenTermsArchive/france-versions/releases/tag/france-collection-dataset-2026-11-23 Apple "Privacy Policy" --policy-url https://www.apple.com/legal/privacy/
+uv run python -m privora.live_setup import-archive apple path/to/france-collection-dataset-2026-11-23.zip https://github.com/OpenTermsArchive/france-versions/releases/tag/france-collection-dataset-2026-11-23 Apple "Privacy Policy" --policy-url https://www.apple.com/legal/privacy/
 ```
 
 Pass the original policy URL when documented for the collection. The optional URL is provenance and is never fetched by the importer. Imported dates are archive dates. Check the collection scope and attribution in the release.
@@ -53,20 +53,20 @@ Pass the original policy URL when documented for the collection. The optional UR
 
 1. Install the official GitHub MCP server binary from the verified [v2.2.0 release](https://github.com/github/github-mcp-server/releases/tag/v2.2.0). Set its absolute path in `LIVE_GITHUB_COMMAND`. Configure a fine-grained token for a designated test repository with Contents read permission and set `LIVE_GITHUB_REPO` to that repository's exact `owner/repo`. Keep the token in the ignored Live settings.
 2. Register and refresh the direct policy URL in `LIVE_GITHUB_POLICY_URL`. Review the applicable account terms and opt-out status. Review and approve the local analyzer's handling profile. Use a small regular Markdown or text file at an immutable commit in the designated repository. Register the path, SHA, and trusted classification in Live Mode.
-3. Run `uv run python -m policyguard.live_client <resource-id>` from the Live-configured terminal. A successful result reports `RECEIVED`; Live audit identifies the resource and both policy bases. Use a test fixture whose classification and policy applicability you can actually attest. The analyzer returns a word count and stores a local receipt.
+3. Run `uv run python -m privora.live_client <resource-id>` from the Live-configured terminal. A successful result reports `RECEIVED`; Live audit identifies the resource and both policy bases. Use a test fixture whose classification and policy applicability you can actually attest. The analyzer returns a word count and stores a local receipt.
 
 ### Verify both outcomes on the same synthetic file
 
 Register the fixture as `CONFIDENTIAL` and keep the source review current for both requests. After approving the local analyzer, run:
 
 ```powershell
-uv run python -m policyguard.live_client <resource-id> --expect allowed
+uv run python -m privora.live_client <resource-id> --expect allowed
 ```
 
 If you know the fixture's word count, add `--word-count <count>` to check the analyzer output too. Then record a review for the same analyzer version with **Account applicability → Unknown**, using evidence that identifies this as a deliberate test hold. Repeat the same MCP request:
 
 ```powershell
-uv run python -m policyguard.live_client <resource-id> --expect blocked --reason CONTRACT_APPLICABILITY_UNKNOWN
+uv run python -m privora.live_client <resource-id> --expect blocked --reason CONTRACT_APPLICABILITY_UNKNOWN
 ```
 
 Both commands verify the persisted audit, source version, analyzer policy version, and whether the request ID has a downstream receipt. The first must return `ALLOW / RECEIVED` with a receipt. The second must return `REVIEW_REQUIRED / NOT_SENT` without one. Match the request IDs in the terminal to the corresponding timestamps and decisions in **Live transfer audit**. Restore the analyzer approval only if its handling profile has been verified.

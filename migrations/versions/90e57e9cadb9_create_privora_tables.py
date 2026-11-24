@@ -1,4 +1,4 @@
-"""create policyguard tables
+"""create privora tables
 
 Revision ID: 90e57e9cadb9
 Revises:

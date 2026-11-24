@@ -32,7 +32,7 @@ const time = (value: string | null) => value ? new Date(value).toLocaleString() 
 async function request<T>(route: string, data?: object, method = "POST"): Promise<T> {
   const response = await fetch("/api/live/" + route, data === undefined
     ? { cache: "no-store" }
-    : { method, headers: { "Content-Type": "application/json", "X-PolicyGuard-Live": "1" }, body: JSON.stringify(data) });
+    : { method, headers: { "Content-Type": "application/json", "X-Privora-Live": "1" }, body: JSON.stringify(data) });
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
     throw Object.assign(new Error(typeof payload?.detail === "string" ? payload.detail : "Live request failed (" + response.status + ")."), { status: response.status });
