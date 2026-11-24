@@ -1,0 +1,18 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: policyguard
+      POSTGRES_USER: policyguard
+      POSTGRES_PASSWORD: policyguard
+    ports:
+      - "127.0.0.1:55439:5432"
+    volumes:
+      - data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U policyguard -d policyguard"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+volumes:
+  data:
