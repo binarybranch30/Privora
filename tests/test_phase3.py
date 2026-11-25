@@ -93,6 +93,7 @@ async def test_observed_destination_drift_and_impact(tmp_path, local_https):
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app), httpx.AsyncClient(transport=transport, base_url=ORIGIN) as http:
         assert (await http.get("/api/policy-changes/1/impact")).status_code == 401
+        assert (await http.get("/api/dashboard")).status_code == 401
         assert (await http.post(f"/api/services/{DESTINATION}/review", json={})).status_code == 401
         login = await http.post("/api/session", json={"secret": ADMIN}, headers=MUTATION)
         assert login.status_code == 200
@@ -128,6 +129,13 @@ async def test_observed_destination_drift_and_impact(tmp_path, local_https):
                                            "commit": "a" * 40, "classification": classification})
             await api("POST", "workflows", {"resource_id": resource, "destination": DESTINATION})
 
+        configured = await api("GET", "dashboard")
+        assert not configured["audit"]
+        assert len(configured["workflows"]) == 4
+        before = next(row for row in configured["workflows"]
+                      if row["resource_id"] == "protected" and row["destination"] == DESTINATION)
+        assert before["decision"] == "ALLOW" and before["policy_version"] == 1
+        assert before["evaluated_at"] and not connector_reads and total() == 0
         allowed = await transfer("protected")
         assert (allowed["decision"], allowed["policy_version"], allowed["delivery"]) == ("ALLOW", 1, "RECEIVED")
         assert total() == 1 and connector_reads == ["protected.txt"]
@@ -150,6 +158,9 @@ async def test_observed_destination_drift_and_impact(tmp_path, local_https):
         dashboard = await api("GET", "dashboard")
         audit = next(row for row in dashboard["audit"] if row["request_id"] == denied["request_id"])
         assert audit["decision_origin"] == "POLICY_DRIFT" and audit["policy_version"] == 2
+        after = next(row for row in dashboard["workflows"] if row["id"] == audit["workflow_id"])
+        assert after["decision"] == "REVIEW_REQUIRED" and after["reason"] == audit["reason"]
+        assert after["decision_change_id"] == audit["policy_change_id"]
         impact = await api("GET", f"policy-changes/{audit['policy_change_id']}/impact")
         assert impact["affected_workflows"] == 1 and impact["restricted_workflows"] == 1
         assert impact["unaffected_workflows"] == 1 and impact["historical_review_candidates"] == 1

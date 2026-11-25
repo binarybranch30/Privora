@@ -13,14 +13,17 @@ from sqlalchemy import func, select
 
 from .views import AuditView, ChangeView, ServiceView, VersionView
 from .db import Audit, Change, Receipt, Rule, Service, Version, now, sessions
-from .gateway import locked_service
+from .gateway import locked_service, subprocess_session
 from .live_config import LiveSettings
 from .live_connector import github_text, validate_resource
 from .live_fetch import FetchError, fetch_live_policy, fixture_url, permitted_url
-from .live_gateway import ANALYZER, ORG, live_gateway
+from .live_gateway import ANALYZER, ORG, live_gateway, live_transfer, workflow_decision
 from .live_models import ArchiveVersion, LiveIdentity, LiveResource, LiveReview, LiveSource, LiveTrace, LiveTransition, LiveWorkflow
-from .live_policy import LOCAL_SCOPE, MONITORED_ANALYZER, MONITORED_SCOPE, active_drift, formatting_equivalent
-from .live_impact import Impact, policy_impact
+from .live_policy import LOCAL_SCOPE, MONITORED_ANALYZER, MONITORED_SCOPE, SECOND_ANALYZER, active_drift, formatting_equivalent
+from .impact import Impact
+from .live_impact import policy_impact
+from .live_queue import ProtectedQueue, QueueError, rehearsal_job_id
+from .live_queue_client import submit, submit_lanes
 from .monitor import ChatExtractor, MockExtractor, changed_passages, observe
 
 LOG = logging.getLogger(__name__)
@@ -57,7 +60,7 @@ class ReviewInput(BaseModel):
 
 class WorkflowInput(BaseModel):
     resource_id: Id
-    destination: Literal["fictional_analyzer"]
+    destination: Literal["fictional_analyzer", "fictional_analyzer_b"]
 
 
 class WorkflowCreated(BaseModel):
@@ -83,12 +86,16 @@ def matches(provided, expected):
 
 
 def create_live_app(settings, *, fetch=fetch_live_policy, read_file=github_text, schedule=True):
+    monitored = {key: url for key, url in (
+        (MONITORED_ANALYZER, settings.analyzer_policy_url),
+        (SECOND_ANALYZER, settings.analyzer_b_policy_url),
+    ) if url}
     db_factory = sessions(settings.database_url)
     lock = asyncio.Lock()
     refresh_lock = asyncio.Lock()
+    demo_lock = asyncio.Lock()
+    background_tasks = []
     browser_sessions = {}
-    mcp = live_gateway(settings, db_factory, lock, read_file)
-    mcp_app = mcp.streamable_http_app()
     fallback = MockExtractor()
 
     class LiveExtractor:
@@ -115,7 +122,7 @@ def create_live_app(settings, *, fetch=fetch_live_policy, read_file=github_text,
             attempt = now()
             error = None
             try:
-                if service_id == MONITORED_ANALYZER and settings.fixture_ca and url == settings.analyzer_policy_url:
+                if settings.fixture_ca and url == monitored.get(service_id):
                     final_url, content = await fetch(url, settings.policy_hosts, fixture_ca=settings.fixture_ca)
                 else:
                     final_url, content = await fetch(url, settings.policy_hosts)
@@ -140,9 +147,9 @@ def create_live_app(settings, *, fetch=fetch_live_policy, read_file=github_text,
                     )
                     service.source = final_url
                     version, change = await observe(
-                        db, service, content, fallback if service_id == MONITORED_ANALYZER else LiveExtractor(),
+                        db, service, content, fallback if service_id in monitored else LiveExtractor(),
                         organization_id=ORG,
-                        cosmetic_equivalent=formatting_equivalent if service_id == MONITORED_ANALYZER else None,
+                        cosmetic_equivalent=formatting_equivalent if service_id in monitored else None,
                     )
                     if change:
                         db.add(LiveTransition(
@@ -165,27 +172,43 @@ def create_live_app(settings, *, fetch=fetch_live_policy, read_file=github_text,
             except Exception as error:
                 LOG.warning("Live policy scheduling pass failed (%s)", type(error).__name__)
 
+    transfer = live_transfer(settings, db_factory, lock, read_file)
+    queue = ProtectedQueue(settings, db_factory, lock, transfer, refresh) if (
+        schedule and settings.queue_resources and settings.fixture_ca and settings.analyzer_policy_url
+    ) else None
+    mcp = live_gateway(settings, db_factory, lock, read_file, transfer=transfer,
+                       submit_job=queue.submit_protected_job if queue else None,
+                       submit_lanes=queue.submit_rehearsal_lanes if queue and settings.analyzer_b_policy_url else None)
+    mcp_app = mcp.streamable_http_app()
+
     @asynccontextmanager
     async def lifespan(_):
         with db_factory.begin() as db:
             if db.get(LiveIdentity, 1) is None or db.get(Rule, "demo-org"):
                 raise RuntimeError("Expected a provisioned Live database")
-            if settings.analyzer_policy_url:
+            for service_id, configured in monitored.items():
                 validate = fixture_url if settings.fixture_ca else lambda url: permitted_url(url, settings.policy_hosts)
-                url = str(validate(settings.analyzer_policy_url))
-                if not db.get(Service, MONITORED_ANALYZER):
-                    db.add(Service(id=MONITORED_ANALYZER, name="Fictional monitored analyzer", source=url))
+                url = str(validate(configured))
+                if not db.get(Service, service_id):
+                    name = "Analyzer A" if service_id == MONITORED_ANALYZER else "Analyzer B"
+                    db.add(Service(id=service_id, name=name, source=url))
                     db.flush()
-                    db.add(LiveSource(service_id=MONITORED_ANALYZER, configured_url=url))
-                elif db.get(LiveSource, MONITORED_ANALYZER).configured_url != url:
+                    db.add(LiveSource(service_id=service_id, configured_url=url))
+                elif db.get(LiveSource, service_id).configured_url != url:
                     raise RuntimeError("The registered analyzer policy URL does not match Live configuration")
+        if queue:
+            queue.recover()
         async with mcp.session_manager.run():
-            task = asyncio.create_task(worker()) if schedule else None
+            tasks = [asyncio.create_task(worker())] if schedule else []
+            if queue:
+                tasks.extend([asyncio.create_task(queue.watch()), asyncio.create_task(queue.worker())])
             try:
+                background_tasks[:] = tasks
                 yield
             finally:
-                if task:
+                for task in tasks:
                     task.cancel()
+                for task in tasks:
                     with suppress(asyncio.CancelledError):
                         await task
                 db_factory.kw["bind"].dispose()
@@ -247,12 +270,15 @@ def create_live_app(settings, *, fetch=fetch_live_policy, read_file=github_text,
             versions = [VersionView.model_validate(row) for row in db.scalars(select(Version).order_by(Version.id.desc()).limit(100))]
             changes = [ChangeView.model_validate(row) for row in db.scalars(select(Change).order_by(Change.id.desc()).limit(100))]
             audit = []
-            for row, trace in db.execute(select(Audit, LiveTrace).join(LiveTrace).order_by(Audit.timestamp.desc()).limit(100)):
+            for row, trace, receipt in db.execute(select(Audit, LiveTrace, Receipt).join(LiveTrace)
+                    .outerjoin(Receipt, Receipt.request_id == Audit.request_id).order_by(Audit.timestamp.desc()).limit(100)):
                 audit.append(AuditView.model_validate(row).model_dump() | {
                     "source_service": trace.source_service, "source_version": trace.source_version,
                     "resource_id": trace.resource_id, "destination_profile": trace.destination_profile,
                     "workflow_id": trace.workflow_id, "policy_change_id": trace.policy_change_id,
                     "decision_origin": trace.decision_origin,
+                    "receiver": receipt.receiver if receipt else None,
+                    "receipt_at": receipt.received_at if receipt else None,
                 })
             historical = list(db.scalars(select(ArchiveVersion).order_by(ArchiveVersion.archived_at.desc()).limit(100)))
             archive = []
@@ -269,8 +295,104 @@ def create_live_app(settings, *, fetch=fetch_live_policy, read_file=github_text,
             archive.reverse()
             resources = [{"id": row.id, "service_id": row.service_id, "classification": row.classification}
                          for row in db.scalars(select(LiveResource).order_by(LiveResource.id))]
+            workflows = []
+            evaluated_at = now()
+            for binding, resource in db.execute(
+                select(LiveWorkflow, LiveResource).join(LiveResource).order_by(LiveWorkflow.id)
+            ):
+                source = db.get(Service, resource.service_id)
+                destination = db.get(Service, binding.destination)
+                decision, origin, change_id = workflow_decision(
+                    db, resource, binding, source, destination, settings.stale_seconds,
+                    monitored_enabled=binding.destination in monitored,
+                )
+                rule = db.get(Rule, binding.rule_id)
+                workflows.append({
+                    "id": binding.id, "resource_id": resource.id, "source_service": resource.service_id,
+                    "destination": binding.destination, "operation": binding.operation,
+                    "classification": resource.classification, "rule_id": binding.rule_id,
+                    "account_scope": binding.account_scope, "no_training": rule.no_training,
+                    "allow_public": rule.allow_public, "decision": decision.decision,
+                    "reason": decision.reason, "decision_origin": origin, "decision_change_id": change_id,
+                    "evaluated_at": evaluated_at, "source_version": source.current_version if source else None,
+                    "policy_version": destination.current_version,
+                })
             return {"services": services, "versions": versions, "changes": changes, "audit": audit, "archive": archive,
-                    "resources": resources, "connector_configured": bool(settings.github_command and settings.github_token and settings.github_repo)}
+                    "resources": resources, "workflows": workflows,
+                    "connector_configured": bool(settings.github_command and settings.github_token and settings.github_repo)}
+
+    @app.get("/api/protection", dependencies=[Depends(admin)])
+    async def protection():
+        return {**queue.view(), "demo_enabled": bool(settings.demo_resource),
+                "three_lanes": bool(settings.analyzer_b_policy_url)} if queue else {"enabled": False, "session": None, "jobs": []}
+
+    @app.post("/api/protection/demo", dependencies=[Depends(mutation)])
+    async def start_demo():
+        if not queue or not settings.demo_resource:
+            raise HTTPException(404, "The one-click rehearsal is disabled.")
+        if len(background_tasks) != 3 or any(task.done() for task in background_tasks):
+            raise HTTPException(503, "The policy monitor or transfer worker is unavailable. Restart the rehearsal Live service.")
+        if not all((settings.github_command, settings.github_token, settings.github_repo)):
+            raise HTTPException(503, "Configure the GitHub MCP connection for the synthetic fixture.")
+        async with demo_lock:
+            snapshot = queue.view()
+            session = snapshot["session"]
+            if session and session["stopped_at"] is None and snapshot["jobs"]:
+                if settings.analyzer_b_policy_url and {job["lane"] for job in snapshot["jobs"]} != {
+                    "a_confidential", "a_public", "b_confidential", "b_public",
+                }:
+                    raise HTTPException(409, "Stop the current session before starting a new rehearsal batch.")
+                return {**snapshot, "demo_enabled": True}
+            try:
+                async with asyncio.timeout(15):
+                    for destination in monitored:
+                        async with subprocess_session("analyzer", settings.database_url, receiver=destination) as client:
+                            tools = await client.list_tools()
+                            if not any(tool.name == "analyze_content" for tool in tools.tools):
+                                raise RuntimeError("Receiver tool missing")
+            except Exception:
+                raise HTTPException(503, "The controlled analyzer could not be reached. Check the rehearsal receiver.") from None
+            try:
+                session_id = await queue.start_session(required_resource=settings.demo_resource)
+            except QueueError as error:
+                raise HTTPException(409, str(error)) from None
+            if settings.analyzer_b_policy_url:
+                observed = await refresh(SECOND_ANALYZER)
+                with db_factory() as db:
+                    second = db.get(Service, SECOND_ANALYZER)
+                    if (observed["status"] != "OK" or not second or not second.enabled or second.status != "APPROVED"
+                            or second.approved_version != second.current_version):
+                        raise HTTPException(409, "Analyzer B needs reachable, independently approved terms. Check Settings.")
+            # Deterministic per session so retrying after a lost response cannot duplicate the batch.
+            job_id = rehearsal_job_id(settings, session_id)
+            try:
+                async with asyncio.timeout(15):
+                    if settings.analyzer_b_policy_url:
+                        await submit_lanes(settings, session_id, rehearsal_job_id(settings, session_id, "launch"))
+                    else:
+                        await submit(settings, session_id, job_id,
+                                     [settings.demo_resource] * settings.demo_count, settings.demo_port)
+            except Exception:
+                LOG.warning("Rehearsal MCP submission did not return successfully")
+                raise HTTPException(503, "Could not confirm the batch through the protected gateway. Use Start Live Demo to retry safely.") from None
+            return {**queue.view(), "demo_enabled": True}
+
+    @app.post("/api/protection/session", dependencies=[Depends(mutation)])
+    async def start_protection():
+        if not queue:
+            raise HTTPException(404, "The synthetic protected queue is disabled.")
+        try:
+            await queue.start_session()
+        except QueueError as error:
+            raise HTTPException(409, str(error)) from None
+        return queue.view()
+
+    @app.delete("/api/protection/session", dependencies=[Depends(mutation)])
+    async def stop_protection():
+        if not queue:
+            raise HTTPException(404, "The synthetic protected queue is disabled.")
+        await queue.stop_session()
+        return queue.view()
 
     @app.post("/api/services", status_code=201, dependencies=[Depends(mutation)])
     async def add_service(body: Registration):
@@ -291,7 +413,7 @@ def create_live_app(settings, *, fetch=fetch_live_policy, read_file=github_text,
     async def impact(change_id: int) -> Impact:
         with db_factory() as db:
             result = policy_impact(db, change_id, settings.stale_seconds,
-                                   monitored_enabled=bool(settings.analyzer_policy_url))
+                                   monitored_destinations=monitored)
             if result is None:
                 raise HTTPException(404, "Observed policy change not found")
             return result
@@ -300,7 +422,7 @@ def create_live_app(settings, *, fetch=fetch_live_policy, read_file=github_text,
     async def register_workflow(body: WorkflowInput) -> WorkflowCreated:
         async with lock:
             with db_factory.begin() as db:
-                if not settings.analyzer_policy_url or not db.get(Service, body.destination):
+                if body.destination not in monitored or not db.get(Service, body.destination):
                     raise HTTPException(409, "Configure the monitored analyzer first")
                 if not db.get(LiveResource, body.resource_id):
                     raise HTTPException(404, "Registered resource not found")

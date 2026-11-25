@@ -6,6 +6,32 @@ Built for **wHACKiest 2026** · **Make MCP Matter — Less Magic, More Utility**
 
 An AI agent may have permission to send confidential data to a provider. If that provider changes its privacy terms, a static permission list can keep allowing transfers under an outdated approval. Privora tracks the terms a workflow relies on and uses the current policy state to decide whether an MCP transfer can proceed. In the verified Live run, an observed clause change blocked the same confidential request without a gateway restart or an additional analyzer receipt.
 
+## Live demo
+
+Open **Overview** and click **Start Live Demo**. Each analyzer gets 13 confidential and 7 public submissions using the registered synthetic GitHub fixtures. The two lanes show which file is processing and its classification. The gateway animation follows real processing and receiver receipts.
+
+1. Start with both analyzers independently approved and both policies using the no-training sentence below.
+2. After the first deliveries, edit only [`privacy.txt`](privacy.txt) and save the training sentence.
+3. Analyzer A holds its waiting confidential files. Its public files and Analyzer B's files continue where permitted. **View evidence** opens the observed terms, affected workflows, and receipt counts.
+4. Restore the exact approved starting sentence to resume the waiting confidential files in that same synthetic rehearsal.
+
+**Starting sentence**
+
+> Customer-submitted documents are not used for AI model training.
+
+**Training sentence**
+
+> Customer-submitted documents may be used to improve our AI models unless an applicable opt-out is enabled.
+
+| Analyzer | Editable file | Local HTTPS endpoint |
+| --- | --- | --- |
+| A | [`privacy.txt`](privacy.txt) | `https://127.0.0.1:8446/privacy` |
+| B | [`privacy-analyzer-b.txt`](privacy-analyzer-b.txt) | `https://127.0.0.1:8447/privacy` |
+
+Leave Analyzer B's terms unchanged during the demo. The [rehearsal runbook](docs/ALWAYS_ON_PROTECTION.md) covers the HTTPS servers, workflow bindings and approvals, and the separate synthetic-only comparison.
+
+**Overview** shows the two analyzers. **Investigations** contains policy diffs and blast-radius analysis. **Activity** shows individual decisions and receipts. **Settings** contains policy sources, workflow bindings, and reviews.
+
 ## What works
 
 - **Policy monitoring** fetches allowlisted HTTPS terms, stores normalized versions, and records changes with source URLs and timestamps. Open Terms Archive imports provide historical context.
@@ -40,7 +66,11 @@ flowchart LR
 
 ## Screenshots / Product Preview
 
-**Dashboard and mode selector.** Demo Mode shows the synthetic workflow, gateway status, and downstream analyzer receipts.
+**Current Live Overview.** A completed synthetic run with two analyzer lanes, receiver-confirmed totals, and an incident summary.
+
+![Privora Live Overview with Analyzer A, Analyzer B, and the policy change summary](docs/assets/screenshots/live-two-analyzer-overview.png)
+
+**Earlier isolated Demo dashboard.** These screenshots show the original Demo workflow and audit views. The current Live workspace uses the two-analyzer Overview described above.
 
 ![Privora dashboard overview showing the Demo and Live mode selector and analyzer receipts](docs/assets/screenshots/demo-dashboard-overview.jpg)
 
@@ -57,7 +87,7 @@ Prerequisites are Git, Python 3.12+, [uv](https://docs.astral.sh/uv/), Node.js 2
 Run from PowerShell. On Linux or WSL, use `cp` instead of `Copy-Item`, `npm` instead of `npm.cmd`, and Bash environment syntax.
 
 ```powershell
-git clone -b feature/live-integrations https://github.com/binarybranch30/Privora.git
+git clone -b feature/privora-investigation-ui https://github.com/binarybranch30/Privora.git
 cd Privora
 Copy-Item .env.example .env
 docker compose up -d --wait
@@ -70,7 +100,7 @@ The supplied Compose database listens locally on port `55439`. The Demo backend 
 
 Existing database and role names still use the `policyguard` prefix so current data and credentials remain usable. For an existing setup, update any exported project-specific settings to `PRIVORA_ADMIN_TOKEN`, `PRIVORA_API_ORIGIN`, and `PRIVORA_LIVE_CONFIG` as applicable. Direct Live dashboard API clients should send `X-Privora-Live: 1` for mutations.
 
-### 2. Start Demo and the dashboard
+### 2. Start the isolated Demo backend (optional)
 
 Use separate terminals from the checkout root.
 
@@ -82,7 +112,7 @@ uv run uvicorn privora.api:app --host 127.0.0.1 --port 8000
 npm.cmd --prefix frontend run dev -- --hostname 127.0.0.1
 ```
 
-Open the [dashboard](http://127.0.0.1:3000), choose **Demo Mode**, and click **Reset demo** to seed it. The FastAPI process also serves the Demo MCP gateway at `http://localhost:8000/mcp/`. To verify the synthetic sequence and its receipts:
+To expose the separate Demo/Live selector, set `$env:NEXT_PUBLIC_PRIVORA_TRANSFER_DEMO = "0"` before starting the frontend. In that configuration select **Demo**, then click **Reset demo**. The FastAPI process also serves the Demo MCP gateway at `http://localhost:8000/mcp/`. To verify the synthetic sequence and its receipts:
 
 ```powershell
 uv run python -m scripts.verify_demo
@@ -100,30 +130,31 @@ uv run python -m privora.live_setup migrate
 uv run uvicorn privora.live_api:app_factory --factory --host 127.0.0.1 --port 8001
 ```
 
-Choose **Live Mode** in the same dashboard and sign in with the local Live admin secret. Live MCP clients connect to `http://localhost:8001/mcp/` with their separate bearer credential. Keep both backends on loopback with one worker per instance.
+The default dashboard opens Live. Standard Live requires an admin sign-in. Live MCP clients connect to `http://localhost:8001/mcp/` with their separate bearer credential. Keep both backends on loopback with one worker per instance.
 
-## Demo walkthrough
+### 4. Open the local presentation without a sign-in screen
 
-The [final demo runbook](docs/FINAL_DEMO_RUNBOOK.md) contains the commands, safe fixture reset, expected output, and troubleshooting.
+Use this option on a trusted machine with a dedicated synthetic rehearsal configuration. Keep the rehearsal backend running and launch the presentation frontend:
 
-1. The official GitHub MCP server reads a synthetic file classified as **CONFIDENTIAL**. The v1 fictional analyzer policy is approved, so the local analyzer receives it and records a receipt.
-2. The controlled HTTPS endpoint changes its wording from prohibiting training on submitted documents to allowing model improvement unless an opt-out applies.
-3. **Refresh policy** observes v2, stores the clause comparison and automatically invalidates the applicable approval.
-4. The identical confidential request returns `REVIEW_REQUIRED / AI_TRAINING_CONFLICT / NOT_SENT`. Its request ID has no analyzer receipt, and the receipt total stays at **3** in the recorded run.
-5. A separately classified public request remains allowed. **View blast radius** shows the affected confidential workflow, unaffected public workflow, and prior delivery to review.
+```powershell
+$env:PRIVORA_LIVE_CONFIG = ".env.live"
+uv run python -m scripts.run_local_demo --port 3000 --live-port 8001
+```
+
+Open [Privora](http://127.0.0.1:3000). The launcher binds the frontend to loopback and the Next.js server obtains an ordinary admin session for the local browser. The secret stays server-side. Keep this option off for shared or public deployments. Match `--live-port` to your rehearsal backend.
 
 ## Verification
 
 | Check | Confirmed result |
 | --- | --- |
-| Backend suite | 11 passed on SQLite and 11 passed on PostgreSQL |
+| Backend suite | Policy, HTTPS, isolation, gateway, and queue regression tests |
 | Frontend | Lint and production build passed |
 | Credentialed GitHub MCP | Nine-word confidential fixture delivered under approved v1 |
-| Automatic restriction | Identical retry held after the ordinary v2 refresh, with no gateway restart and no additional receipt |
+| Automatic restriction | Editing the root policy in a browser rehearsal held Analyzer A confidential files while its public lane and Analyzer B continued |
 | Isolation | Live request IDs absent from Demo audit |
 | Blast radius | One affected and restricted workflow, one unaffected workflow, one historical review candidate |
 
-The [verification log](docs/VERIFICATION.md) includes the exact request IDs and distinguishes the real GitHub run, fictional HTTPS terms, and automated tests. Full browser interactions and a commercial LLM call have not been verified.
+The [verification log](docs/VERIFICATION.md) distinguishes the real GitHub run, fictional HTTPS terms, and automated tests. The two-analyzer rehearsal was verified in a browser against independent local HTTPS sources. The optional commercial LLM call has not been verified.
 
 ```powershell
 uv run pytest -q

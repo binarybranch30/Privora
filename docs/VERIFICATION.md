@@ -93,3 +93,25 @@ Live impact for change 4 returned one affected and restricted workflow, one unaf
 Browser inspection reached the existing dashboard tab, then computer use was stopped with Escape. A full interaction pass was not completed. Use the browser checklist in [FINAL_DEMO_RUNBOOK.md](FINAL_DEMO_RUNBOOK.md). The fixture remains on v2 for evidence inspection.
 
 Final checks passed with 11 tests on SQLite and 11 on dedicated PostgreSQL test databases, including the real TLS fixture and MCP integration cases. Frontend lint and production build passed. Through the running dashboard proxy, an unchanged fixture refresh stayed at v2, an intentionally unavailable fixture surfaced FETCH_FAILED without changing the version or review state, and the recovered fixture still returned v2 unchanged.
+
+## Always-on protected queue rehearsal
+
+The run used an isolated PostgreSQL 17 rehearsal database, the official credentialed GitHub MCP connector, the file-backed loopback HTTPS fixture, and the real private analyzer. The independent MCP client submitted job `1fbeb962-619a-4396-a33f-ffcfd938d8c2`. Its first confirmed request was `56270076-2d72-47e3-b430-dc562096882b`.
+
+The fictional policy was saved to the fixture's `privacy.txt` after the first receipt. A separate TLS-verified GET returned the new text immediately. The running Live monitor persisted change 3 and invalidated approval. The browser observed v2 and the withheld items through polling. After setup, the only browser writes were Live sign-in and starting protected monitoring. The external client submitted the work over MCP. No refresh action, approval write, policy simulation, or restart occurred during the run.
+
+| Observed result | Receiver evidence |
+| --- | --- |
+| Confidential documents admitted under v1 | 2 completed receipts totaling 144 UTF-8 payload bytes |
+| Confidential documents evaluated under v2 | 12 `REVIEW_REQUIRED / NOT_SENT`, zero completed receipts |
+| Public control evaluated under v2 | 1 completed receipt, 57 payload bytes |
+| Isolated synthetic comparison | 9 completed when the protected queue first showed withholding, then 24 completed totaling 2,088 payload bytes |
+
+The integration regression exercises an in-flight authorization race, an unavailable policy file, idempotent queue submission, unchanged observations, cancellation, and recovery of unresolved claims. This queue transfers whole documents. It has no partially staged files. See the [protected queue runbook](ALWAYS_ON_PROTECTION.md) for the fixture filename and launch commands.
+## Three-stream rehearsal
+
+The follow-up rehearsal used 13 confidential and 7 public submissions per analyzer, and pointed Analyzer A's existing HTTPS endpoint at the root `privacy.txt`. A real browser run verified all four lane sizes and the receipt-driven gateway animation. Editing the root file was observed after about four seconds. Analyzer A held the 12 confidential files still waiting, and each of the other three lanes recorded a receipt after the observation. Analyzer B continued using its separate no-training terms at revision 1.
+
+The browser rehearsal used a separate PostgreSQL database, two independent loopback HTTPS fixtures, and the pinned read-only GitHub MCP connector. The launch produced receiver-tagged receipts in all three lanes. Editing only Analyzer A's file led to an observed restriction in about 5.7 seconds. At the inspection point, one Analyzer A confidential file had already arrived, 11 were held, and no later Analyzer A confidential transfer had been initiated during the restriction. Analyzer A public and Analyzer B confidential each had a post-observation receipt. Analyzer B stayed approved on its original revision.
+
+The incident summary matched the persisted receipts. **View evidence** opened the changed clause and impacted workflows. Restoring Analyzer A's exact starting terms resumed its existing lane. The same incident record remained visible and its current held count cleared. The older single-analyzer rehearsal remained on its original database.

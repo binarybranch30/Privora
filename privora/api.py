@@ -10,7 +10,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, inspect, select, text
 
 from .db import Audit, Change, Receipt, Review, Rule, Service, Version, database_url, now, sessions
-from .demo import reset
+from .demo import DemoDocumentId, reset
+from .demo_impact import demo_policy_impact
+from .impact import Impact
 from .gateway import ToolDecision, call_gateway, gateway_server, locked_service
 from .monitor import DEMO_SERVICE, DRIFT, configured_extractor, fetch_policy, observe
 from .views import AuditView, ChangeView, ServiceView, VersionView
@@ -35,7 +37,7 @@ class Observation(BaseModel):
 
 
 class DemoRun(BaseModel):
-    document_id: Literal["confidential_001", "public_001"] = "confidential_001"
+    document_id: DemoDocumentId = "confidential_001"
 
 
 class Approval(BaseModel):
@@ -175,6 +177,15 @@ def create_app(url=None, *, demo_mode=None, extractor=None):
             return await call_gateway("http://localhost:8000/mcp/", {
                 "document_id": run.document_id, "destination_service": DEMO_SERVICE,
             }, httpx.ASGITransport(app=app))
+
+        @app.get("/api/demo/policy-changes/{change_id}/impact")
+        async def demo_impact(change_id: int) -> Impact:
+            async with lock:
+                with db_factory() as db:
+                    result = demo_policy_impact(db, change_id)
+                    if result is None:
+                        raise HTTPException(404, "Observed Demo policy change not found")
+                    return result
 
         @app.get("/api/demo/receipts")
         async def receipts() -> Receipts:

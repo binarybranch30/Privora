@@ -1,16 +1,22 @@
 "use client";
 
-import { Activity, ArrowDownUp, CheckCircle2, CircleAlert, FileText, FlaskConical, Play, RotateCcw, Shield, ShieldCheck, ShieldX } from "lucide-react";
+import { FlaskConical, Radio, RotateCcw, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import LiveDashboard from "./live";
+import { Workspace } from "./workspace";
+import { DemoGuide } from "./demo-guide";
+import { demoWorkflow, type Change, type Impact, type Result, type Snapshot, type View, type Workflow } from "./investigation-data";
 
-type Service = { id: string; name: string; status: string; source: string; enabled: boolean; current_version: number | null; verified_no_training: boolean; last_checked: string | null; reason: string };
-type Version = { id: number; number: number; source: string };
-type Change = { id: number; previous_id: number | null; version_id: number; passages: { old: string; new: string }[]; clauses: { topic: string; new_interpretation: string }[]; analysis_status: string; enforcement: string; rule: string; reason: string };
-type Result = { request_id: string; decision: string; reason: string; classification: string | null; policy_version: number | null; delivery: string; analysis: { word_count: number } | null };
-type Audit = Result & { timestamp: string; destination: string; operation: string };
-type Snapshot = { demo: boolean; services: Service[]; versions: Version[]; changes: Change[]; audit: Audit[]; receipts: { count: number } | null };
-type Action = "reset" | "simulate-policy-change" | "confidential" | "public";
+const transferDemo = process.env.NEXT_PUBLIC_PRIVORA_TRANSFER_DEMO !== "0";
+
+const navigation: { id: View; text: string }[] = [
+  { id: "overview", text: "Overview" }, { id: "policies", text: "Policy Intelligence" },
+  { id: "impact", text: "Blast Radius" }, { id: "audit", text: "Audit" },
+  { id: "configuration", text: "Service setup" },
+];
+
+type DemoSnapshot = Snapshot & { demo: boolean; receipts: { count: number; request_ids: string[] } | null };
+type Action = "reset" | "simulate-policy-change" | "confidential" | "public" | "refresh";
 
 async function api<T>(path: string, payload?: object): Promise<T> {
   const response = await fetch("/api/" + path, payload === undefined ? { cache: "no-store" } : {
@@ -23,158 +29,183 @@ async function api<T>(path: string, payload?: object): Promise<T> {
   return response.json();
 }
 
-async function snapshot(): Promise<Snapshot> {
+function loadDemoImpact(id: number) {
+  return api<Impact>("demo/policy-changes/" + id + "/impact");
+}
+
+async function snapshot(): Promise<DemoSnapshot> {
   const health = await api<{ demo_mode: boolean }>("health");
-  const [services, versions, changes, audit, receipts] = await Promise.all([
-    api<Service[]>("services"), api<Version[]>("policies/versions"), api<Change[]>("policies/changes"),
-    api<Audit[]>("audit"), health.demo_mode ? api<{ count: number }>("demo/receipts") : null,
+  const [services, versions, changes, events, receipts] = await Promise.all([
+    api<Snapshot["services"]>("services"), api<Snapshot["versions"]>("policies/versions"), api<Snapshot["changes"]>("policies/changes"),
+    api<Snapshot["audit"]>("audit"), health.demo_mode ? api<DemoSnapshot["receipts"]>("demo/receipts") : null,
   ]);
-  return { demo: health.demo_mode, services, versions, changes, audit, receipts };
-}
-
-function label(value: string) {
-  return value.toLowerCase().replaceAll("_", " ").replace(/^./, (first) => first.toUpperCase());
-}
-
-function time(value: string | null) {
-  if (!value) return "Never";
-  const utc = /Z$|[+-]\d\d:\d\d$/.test(value) ? value : value + "Z";
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(utc));
-}
-
-function Status({ value }: { value: string }) {
-  const tone = ["APPROVED", "ALLOW", "RECEIVED"].includes(value) ? "good" : value === "REVIEW_REQUIRED" ? "warn" : value === "BLOCK" || value === "RESTRICTED" ? "bad" : "neutral";
-  return <span className={"pill " + tone}><span aria-hidden="true" />{label(value)}</span>;
+  const provider = services.find(service => service.id === "external_analyzer");
+  const workflows: Workflow[] = health.demo_mode && provider ? [
+    { id: 1, resource_id: "confidential_001", classification: "CONFIDENTIAL", source_service: "demo_documents", destination: provider.id, operation: "analyze_document" },
+    { id: 2, resource_id: "public_001", classification: "PUBLIC", source_service: "demo_documents", destination: provider.id, operation: "analyze_document" },
+  ] : [];
+  const audit = health.demo_mode ? events.map(event => ({
+    ...event, source_service: "demo_documents", workflow_id: demoWorkflow(event),
+  })) : events;
+  return { demo: health.demo_mode, services, versions, changes, workflows, audit, receipts };
 }
 
 export default function Dashboard() {
-  const [live, setLive] = useState(false);
+  const [live, setLive] = useState(true);
+  const [view, setView] = useState<View>("overview");
+  function switchMode(value: boolean) {
+    setLive(value);
+    setView("overview");
+  }
   return <>
-    <div className="mode-bar"><div className="shell mode-inner" role="group" aria-label="Dashboard mode">
-      <button className={live ? "ghost" : "secondary"} aria-pressed={!live} onClick={() => setLive(false)}>Demo Mode</button>
-      <button className={live ? "secondary" : "ghost"} aria-pressed={live} onClick={() => setLive(true)}>Live Mode</button>
-      <span>{live ? "Observed data" : "Synthetic data"}</span>
-    </div></div>
-    {live ? <LiveDashboard /> : <DemoDashboard />}
+    <a className="skip-link" href="#workspace">Skip to workspace</a>
+    <header className="product-header">
+      <button className="wordmark" onClick={() => setView("overview")}><ShieldCheck size={22} /> Privora</button>
+      <nav aria-label="Workspace" className="product-nav">{navigation.filter(item => transferDemo ? item.id !== "impact" : live || item.id !== "configuration").map(item =>
+        <button key={item.id} aria-current={view === item.id || (view === "investigation" && item.id === "overview") ? "page" : undefined} onClick={() => setView(item.id)}>{transferDemo ? ({ policies: "Investigations", audit: "Activity", configuration: "Settings" }[item.id as "policies" | "audit" | "configuration"] ?? item.text) : item.text}</button>)}</nav>
+      {!transferDemo && <div className="mode-inner" role="group" aria-label="Dashboard mode">
+        <button aria-pressed={!live} onClick={() => switchMode(false)}><FlaskConical size={15} /> Demo</button>
+        <button aria-pressed={live} onClick={() => switchMode(true)}><Radio size={15} /> Live</button>
+      </div>}
+    </header>
+    {live ? <LiveDashboard transferDemo={transferDemo} view={view} navigate={setView} /> : <DemoDashboard view={view} navigate={setView} />}
   </>;
 }
 
-function DemoDashboard() {
-  const [data, setData] = useState<Snapshot>();
+function DemoDashboard({ view, navigate }: { view: View; navigate: (view: View) => void }) {
+  const [data, setData] = useState<DemoSnapshot>();
   const [result, setResult] = useState<Result>();
-  const [busy, setBusy] = useState<Action | "refresh">();
+  const [observedChange, setObservedChange] = useState<number>();
+  const [busy, setBusy] = useState<Action>();
+  const [recording, setRecording] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [proof, setProof] = useState<{ delivered?: string; changeId?: number; retry?: string }>({});
+  const service = data?.services.find(item => item.id === "external_analyzer");
+  const ready = service?.source.startsWith("fixture://") ?? false;
+  const needsReset = !!service && (!ready || (proof.changeId == null
+    ? service.current_version !== 1 || service.status !== "APPROVED"
+    : !data?.changes.some(item => item.id === proof.changeId && data.versions.some(record =>
+      record.id === item.version_id && record.number === service.current_version))));
+  const stage = proof.retry ? 3 : proof.changeId ? 2 : proof.delivered ? 1 : 0;
+  const retryRecord = data?.audit.find(item => item.request_id === proof.retry);
 
   useEffect(() => {
     let active = true;
-    snapshot().then((value) => { if (active) setData(value); }).catch((problem: Error) => { if (active) setError(problem.message); });
+    snapshot().then(value => { if (active) setData(value); }).catch((failure: Error) => { if (active) setError(failure.message); });
     return () => { active = false; };
   }, []);
 
-  async function act(action: Action | "refresh") {
+  async function act(action: Action) {
     setBusy(action);
+    setObservedChange(undefined);
+    setResult(undefined);
     setError("");
     setNotice("");
     try {
+      let outcome: Result | undefined;
+      let message = "";
+      let changedVersion: number | undefined;
       if (action === "reset") {
         await api("demo/reset", {});
-        setResult(undefined);
-        setNotice("Demo reset to the approved policy.");
+        setProof({});
+        message = "Demo reset to the approved policy.";
       } else if (action === "simulate-policy-change") {
-        const change = await api<{ version: number; changed: boolean }>("demo/simulate-policy-change", {});
-        setResult(undefined);
-        setNotice(change.changed ? "Policy v" + change.version + " requires review. Retry the same confidential request." : "Policy text is unchanged.");
+        const change = await api<{ version: number; changed: boolean; status: string }>("demo/simulate-policy-change", {});
+        if (change.changed && change.status === "REVIEW_REQUIRED") changedVersion = change.version;
+        message = change.changed ? "Policy v" + change.version + " observed. Retry the confidential transfer." : "Policy text is unchanged.";
       } else if (action !== "refresh") {
-        const decision = await api<Result>("demo/analyze", { document_id: action === "public" ? "public_001" : "confidential_001" });
-        setResult(decision);
+        outcome = await api<Result>("demo/analyze", { document_id: action === "public" ? "public_001" : "confidential_001" });
       }
-      setData(await snapshot());
-    } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Request failed.");
+      const current = await snapshot();
+      setData(current);
+      setResult(outcome);
+      if (action === "simulate-policy-change") {
+        const observed = current.versions.find(item => item.service_id === "external_analyzer" && item.number === changedVersion);
+        const change = current.changes.find(item => item.version_id === observed?.id && item.enforcement === "REVIEW_REQUIRED");
+        if (!change) throw new Error("The backend did not confirm a new policy with approval held for review.");
+        setObservedChange(change.id);
+        setProof(previous => ({ ...previous, changeId: change.id }));
+        message = "Policy v" + changedVersion + " observed. Approval now requires review.";
+      }
+      if (action === "confidential" && outcome) {
+        const row = current.audit.find(item => item.request_id === outcome.request_id);
+        const receipt = current.receipts?.request_ids.includes(outcome.request_id);
+        if (stage === 0) {
+          if (outcome.decision !== "ALLOW" || outcome.delivery !== "RECEIVED" || outcome.policy_version !== 1 || !row || !receipt)
+            throw new Error("The backend did not confirm delivery and a receipt under approved v1.");
+          setProof({ delivered: outcome.request_id });
+          message = "Allowed and received. The analyzer receipt is confirmed.";
+        } else {
+          if (outcome.decision !== "REVIEW_REQUIRED" || outcome.delivery !== "NOT_SENT" || outcome.policy_version !== service?.current_version
+            || !row || !current.receipts || receipt || current.receipts.count !== data?.receipts?.count) {
+            throw new Error("Could not verify the retry was held with an unchanged analyzer receipt count.");
+          }
+          setProof(previous => ({ ...previous, retry: outcome.request_id }));
+          message = "Review required / Not sent. No additional analyzer receipt.";
+        }
+      }
+      if (action === "public" && outcome) {
+        message = outcome.decision === "ALLOW" && outcome.delivery === "RECEIVED" && current.receipts?.request_ids.includes(outcome.request_id)
+          ? "Public transfer allowed. The new analyzer receipt is confirmed."
+          : "Public transfer result: " + outcome.decision + " / " + outcome.delivery + ".";
+      }
+      setNotice(message);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Request failed.");
     } finally {
       setBusy(undefined);
     }
   }
 
-  const totals = data ? [
-    { name: "Connected services", amount: data.services.filter((service) => service.enabled).length, icon: Shield, tone: "" },
-    { name: "Need policy review", amount: data.services.filter((service) => service.status === "REVIEW_REQUIRED" || service.status === "UNKNOWN").length, icon: CircleAlert, tone: "warn-text" },
-    { name: "Allowed operations", amount: data.audit.filter((row) => row.decision === "ALLOW").length, icon: ShieldCheck, tone: "good-text" },
-    { name: "Blocked operations", amount: data.audit.filter((row) => row.decision !== "ALLOW").length, icon: ShieldX, tone: "bad-text" },
-  ] : [];
-  const provider = data?.services.find((service) => service.id === "external_analyzer");
-  const last = data?.changes[0];
+  async function recordDemo() {
+    if (recording || busy) return;
+    setRecording(true);
+    setError("");
+    try {
+      let before = await snapshot();
+      if (!before.demo) throw new Error("Demo mode is unavailable.");
+      if (!before.services.length && !before.audit.length && before.receipts?.count === 0) {
+        await api("demo/reset", {});
+        before = await snapshot();
+      }
+      const service = before.services.find(row => row.id === "external_analyzer");
+      if (!service?.source.startsWith("fixture://") || service.current_version !== 1 || service.status !== "APPROVED") {
+        throw new Error("Recording needs the approved Demo v1 fixture. You can replay existing evidence or restart under Manual Demo tools.");
+      }
+      const first = await api<Result>("demo/analyze", { document_id: "confidential_001" });
+      const delivered = await snapshot();
+      if (first.decision !== "ALLOW" || first.delivery !== "RECEIVED" || first.policy_version !== 1
+        || !delivered.receipts?.request_ids.includes(first.request_id)) throw new Error("The first confidential delivery could not be verified.");
+      const policy = await api<{ version: number; changed: boolean; status: string }>("demo/simulate-policy-change", {});
+      if (!policy.changed || policy.status !== "REVIEW_REQUIRED") throw new Error("The expected policy observation was not confirmed.");
+      const retry = await api<Result>("demo/analyze", { document_id: "confidential_001" });
+      const recorded = await snapshot();
+      const current = recorded.versions.find(row => row.service_id === service.id && row.number === policy.version);
+      const change: Change | undefined = recorded.changes.find(row => row.version_id === current?.id);
+      if (!change || retry.decision !== "REVIEW_REQUIRED" || retry.delivery !== "NOT_SENT" || retry.policy_version !== policy.version
+        || !recorded.audit.some(row => row.request_id === retry.request_id)
+        || !recorded.receipts || recorded.receipts.count !== delivered.receipts.count || recorded.receipts.request_ids.includes(retry.request_id)) {
+        throw new Error("The retry and unchanged receipt count could not be verified.");
+      }
+      setData(recorded);
+      setProof({ delivered: first.request_id, changeId: change.id, retry: retry.request_id });
+      setResult(undefined);
+      setObservedChange(undefined);
+      return { data: recorded, change, focus: recorded.audit.find(row => row.request_id === retry.request_id), receiptCount: recorded.receipts.count };
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Could not record the Demo incident.");
+      try { setData(await snapshot()); } catch { /* Keep the latest available evidence. */ }
+    } finally { setRecording(false); }
+  }
 
-  return (
-    <>
-      <header className="top"><div className="shell top-inner">
-        <a href="#overview" className="brand"><span className="brand-icon"><ShieldCheck size={20} /></span>Privora <small>MCP</small></a>
-        <nav aria-label="Sections"><a href="#services">Services</a><a href="#changes">Policy changes</a><a href="#audit">Audit</a></nav>
-        <button className="ghost refresh" disabled={!!busy} onClick={() => void act("refresh")}><RotateCcw size={15} /> Refresh</button>
-      </div></header>
-      <main className="shell">
-        <section id="overview" className="intro">
-          <div><h1>Privacy firewall</h1><p>Inspect provider policy changes and their effect on document transfers.</p></div>
-          {data && <span className="connection"><Activity size={17} /> Gateway connected</span>}
-        </section>
-        {error && <p role="alert" className="message error">{error}</p>}
-        {!data && !error && <p role="status" className="message">Loading gateway state…</p>}
-        {!!data && <>
-          <div className="metrics">{totals.map(({ name, amount, icon: Icon, tone }) =>
-            <div className="metric" key={name}><span>{name}</span><div><strong>{amount}</strong><Icon size={23} className={tone} aria-hidden="true" /></div></div>)}
-          </div>
-          {data.demo && <section className="demo panel" aria-labelledby="demo-heading">
-            <div className="demo-main">
-              <div className="demo-label"><FlaskConical size={17} /> Synthetic demo</div>
-              <h2 id="demo-heading">Test a confidential transfer</h2>
-              <p>Run an analysis, change the provider policy, then retry the same document to see the firewall enforce the new terms.</p>
-              <div className="invocation"><span>analyze_document</span><code>(confidential_001, external_analyzer)</code></div>
-              <div className="actions">
-                <button className="primary" disabled={!!busy || !provider} onClick={() => void act("confidential")}><Play size={17} />{provider?.status === "APPROVED" ? "Run confidential analysis" : "Retry confidential analysis"}</button>
-                <button className="secondary" disabled={!!busy || !provider} onClick={() => void act("simulate-policy-change")}><ArrowDownUp size={16} /> Simulate policy change</button>
-                <button className="ghost" disabled={!!busy || !provider} onClick={() => void act("public")}>Run public analysis</button>
-                <button className="ghost" disabled={!!busy} onClick={() => void act("reset")}><RotateCcw size={15} /> Reset demo</button>
-              </div>
-            </div>
-            <aside className="receipt" aria-live="polite">
-              <span className="muted">Analyzer receipts</span>
-              <strong>{data.receipts?.count ?? 0}</strong>
-              <p>Requests received by the downstream MCP server.</p>
-              {!!notice && <div className="notice">{notice}</div>}
-              {!!busy && <p className="notice">Working…</p>}
-              {result && <div className="outcome"><Status value={result.decision} /><code>{result.reason}</code><small>{label(result.delivery)} · Policy v{result.policy_version ?? "—"}{result.analysis ? " · " + result.analysis.word_count + " words analyzed" : ""}</small></div>}
-              {!provider && <div className="notice">Reset the demo to seed the provider and documents.</div>}
-            </aside>
-          </section>}
-          <section id="services" className="section">
-            <h2>Connected services</h2>
-            <div className="panel table-wrap"><table><thead><tr><th>Service</th><th>Policy status</th><th>Version</th><th>Last checked</th><th>Data-use condition</th></tr></thead>
-              <tbody>{data.services.map((service) => <tr key={service.id}><td><strong>{service.name}</strong><small>{service.id}</small></td><td><Status value={service.status} /></td><td>{service.current_version ? "v" + service.current_version : "—"}</td><td>{time(service.last_checked)}</td><td>{!service.enabled ? "Destination disabled" : service.verified_no_training ? "No AI training verified" : label(service.reason)}</td></tr>)}
-              {!data.services.length && <tr><td colSpan={5} className="empty">No services configured.</td></tr>}</tbody>
-            </table></div>
-          </section>
-          <section id="changes" className="section">
-            <h2>Recent policy changes</h2>
-            {data.changes.length ? data.changes.map((change) => {
-              const previous = data.versions.find((version) => version.id === change.previous_id);
-              const next = data.versions.find((version) => version.id === change.version_id);
-              return <article className="panel evidence" key={change.id}>
-                <div className="evidence-head"><div><h3><FileText size={18} /> {change.clauses[0]?.topic ?? "Policy text changed"}</h3><p>{change.rule}</p></div><Status value={change.enforcement} /></div>
-                {change.passages.map((passage, index) => <div className="diff" key={index}><div><span>Previous{previous ? " · v" + previous.number : ""}</span><p><mark>{passage.old || "No previous clause"}</mark></p></div><div><span>Updated{next ? " · v" + next.number : ""}</span><p><mark>{passage.new || "Clause removed"}</mark></p></div></div>)}
-                <p className="evidence-footer">{change.clauses[0]?.new_interpretation ?? (change.analysis_status === "FAILED" ? "Extraction failed. The observed text is pending manual review." : label(change.reason))}</p>
-              </article>;
-            }) : <div className="panel empty">{last ? "" : "No policy changes observed."}</div>}
-          </section>
-          <section id="audit" className="section">
-            <h2>Transfer audit</h2>
-            <div className="panel table-wrap"><table><thead><tr><th>Timestamp</th><th>Tool / destination</th><th>Classification</th><th>Decision</th><th>Reason / version</th><th>Delivery</th></tr></thead>
-              <tbody>{data.audit.map((row) => <tr key={row.request_id}><td>{time(row.timestamp)}</td><td><code>{row.operation}</code><small>{row.destination}</small></td><td>{row.classification ? label(row.classification) : "—"}</td><td>{row.decision === "REVIEW_REQUIRED" ? <span className="audit-decision"><Status value={row.decision} /><small>Transfer blocked</small></span> : <Status value={row.decision} />}</td><td><code>{row.reason}</code><small>{row.policy_version ? "Policy v" + row.policy_version : "—"}</small></td><td>{label(row.delivery)}</td></tr>)}
-              {!data.audit.length && <tr><td colSpan={6} className="empty"><CheckCircle2 size={16} /> No transfers recorded.</td></tr>}</tbody>
-            </table></div>
-          </section>
-        </>}
-      </main>
-    </>
-  );
+  return <main className="workspace-shell" id="workspace" tabIndex={-1}>
+    {error && <p role="alert" className="message error">{error}</p>}
+    {!data && (error ? <button className="ghost" disabled={!!busy || recording} onClick={() => void act("refresh")}>Retry connection</button> : <p role="status" className="message">Loading Demo workspace...</p>)}
+    {data && <Workspace view={view} navigate={navigate} data={data} live={false} playback={result} observedChange={observedChange} receiptCount={data.receipts?.count} loadImpact={data.demo ? loadDemoImpact : undefined} recordDemo={data.demo && !busy ? recordDemo : undefined} recording={recording} guidedChangeId={proof.changeId} guidedRetryId={retryRecord?.request_id} pending={busy === "confidential" ? 1 : busy === "public" ? 2 : undefined}
+      toolbar={<button className="ghost" disabled={!!busy || recording} onClick={() => void act("refresh")}><RotateCcw size={15} /> Refresh</button>}
+      demoControls={data.demo ? (inspectRetry, inspectImpact) => <DemoGuide stage={stage} ready={ready} needsReset={needsReset} busy={!!busy || recording} count={data.receipts?.count} outcome={notice}
+        onReset={() => void act("reset")} onPublic={() => void act("public")} onAudit={inspectRetry}
+        onNext={() => stage === 3 ? inspectImpact() : void act(stage === 1 ? "simulate-policy-change" : "confidential")} /> : undefined} />}
+  </main>;
 }

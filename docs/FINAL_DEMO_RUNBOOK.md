@@ -2,6 +2,12 @@
 
 Run commands from the Privora checkout in PowerShell. Keep the dashboard and both API processes on loopback. The monitored analyzer's terms are fictional. The repository file is synthetic and intentionally classified CONFIDENTIAL to exercise the real enforcement path.
 
+## Present the recorded Live investigation
+
+Start Live against the database that retains the credentialed run documented in [VERIFICATION.md](VERIFICATION.md#final-credentialed-confidential-run). Sign in to **Live → Overview** and select **Replay verified Live run**. The option checks the original audit, policy, and impact evidence before it opens. The replay advances automatically. Use **Pause**, **Resume**, the stage buttons, or the replay control to pace the presentation. **Inspect audit**, **Compare versions**, and **Open Blast Radius** open the linked records.
+
+The replay uses a real GitHub MCP read of a synthetic file and a controlled HTTPS endpoint serving fictional analyzer terms. It makes read-only requests and requires no reset, approval change, or new transfer. If the original records have aged out of the dashboard's recent evidence window or are absent from this database, the option is unavailable. **Demo → Record a Demo incident** records an isolated synthetic run in one action when there is no existing incident. It can initialize an empty sandbox, and an existing Demo incident can be replayed without a reset.
+
 ## Preflight and startup
 
 Use the PostgreSQL roles described in the [Live setup guide](LIVE_SETUP.md). Keep existing Demo and Live data. Never reset Demo to prepare the Live presentation.
@@ -65,7 +71,7 @@ In the presentation terminal, set `PRIVORA_LIVE_CONFIG` as in terminal 3. Open t
 uv run python -m privora.live_client github_confidential_fixture --destination fictional_analyzer --expect allowed --word-count 9
 ```
 
-4. Change only the HTTPS fixture state, then use **Refresh policy** on **Fictional monitored analyzer** in Live Mode. Leave the gateway running and do not edit the approval. Wait for the replacement clause and review-required status.
+4. Change only the HTTPS fixture state, then use **Configuration** in Live Mode to refresh **Fictional monitored analyzer**. Leave the gateway running and do not edit the approval. Wait for the replacement clause and review-required status.
 
 ```powershell
 [IO.File]::WriteAllText((Join-Path $env:TEMP 'policyguard-phase3-tls/version.txt'), '2')
@@ -83,7 +89,7 @@ uv run python -m privora.live_client github_confidential_fixture --destination f
 uv run python -m privora.live_client github_synthetic_fixture --destination fictional_analyzer --expect allowed --word-count 6
 ```
 
-7. Under **Observed policy changes**, show the old and new clauses, versions, warning, and organization rule. Open **View blast radius**. On the clean verified run it shows one affected and restricted workflow, one unaffected workflow, and one historical review candidate. Expand both workflows and match the prior confidential delivery to its Live audit ID. Later rehearsals can accumulate more prior deliveries. Historical candidates are records to review.
+7. In **Policy Intelligence**, show the old and new clauses, versions, warning, and organization rule. Open **View blast radius**. On the clean verified run it shows one affected and restricted workflow, one unaffected workflow, and one historical review candidate. Expand both workflows and match the prior confidential delivery to its Live audit ID. Later rehearsals can accumulate more prior deliveries. Historical candidates are records to review.
 
 ## Return the fixture to v1 terms
 
@@ -107,3 +113,6 @@ Write `1` to the fixture state and refresh **Fictional monitored analyzer** only
 Before the event, manually switch Demo → Live → Demo, then return to Live. Confirm Live sign-in, fetch success and visible failure states, change and audit links, expansion of both workflow details, and the separate public and confidential rows. For a controlled fetch error, stop only the fictional fixture process, refresh that service, then restart the fixture with the same state and refresh again. Keep the Live API and Demo running.
 
 Capture a rehearsal clip with the terminal results, clause comparison, expanded blast radius, and both request IDs. Start recording after signing in and keep credentials and settings out of the frame. If the network or browser fails on stage, play that recorded rehearsal. If a clip is unavailable, show the real request IDs and receipts from [VERIFICATION.md](VERIFICATION.md) and the persisted Live audit. For a runnable fallback, use Demo Mode and disclose that it uses synthetic data. Avoid resetting either mode while using prior evidence.
+## Guided Demo walkthrough
+
+In **Demo → Overview**, select **Start demo** for a fresh sandbox or **Reset to approved v1** if the displayed policy has changed. Follow the four actions at the top of the screen. The successful confidential request creates one analyzer receipt. The same request under v2 returns **Review required / Not sent**, and the count stays at one. **Investigate blast radius** shows the restricted confidential route, the unaffected public route, and the earlier receipt as a review candidate. Use **Inspect retry in Audit** to open the exact withheld request. The optional public transfer adds a second receipt.

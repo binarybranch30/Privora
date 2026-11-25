@@ -82,3 +82,33 @@ class LiveTransition(Base):
     previous_status: Mapped[str] = mapped_column(String(32))
     current_status: Mapped[str] = mapped_column(String(32))
     invalidated: Mapped[bool]
+
+class ProtectionSession(Base):
+    __tablename__ = "live_protection_sessions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    destination: Mapped[str] = mapped_column(ForeignKey("services.id"))
+    starting_version: Mapped[int]
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TransferJob(Base):
+    __tablename__ = "live_transfer_jobs"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(ForeignKey("live_protection_sessions.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    lane: Mapped[str | None] = mapped_column(String(32))
+    destination: Mapped[str | None] = mapped_column(ForeignKey("services.id"))
+    starting_version: Mapped[int | None]
+
+
+class TransferItem(Base):
+    __tablename__ = "live_transfer_items"
+    __table_args__ = (UniqueConstraint("job_id", "position"),)
+    request_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    job_id: Mapped[str] = mapped_column(ForeignKey("live_transfer_jobs.id"), index=True)
+    position: Mapped[int]
+    resource_id: Mapped[str] = mapped_column(ForeignKey("live_resources.id"))
+    status: Mapped[str] = mapped_column(String(24), default="QUEUED", index=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

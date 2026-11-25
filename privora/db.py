@@ -86,9 +86,11 @@ class Audit(Base):
 
 
 class Receipt(Base):
+    receiver: Mapped[str | None] = mapped_column(String(80))
     __tablename__ = "analyzer_receipts"
     request_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    byte_count: Mapped[int | None]
 
 
 class Review(Base):

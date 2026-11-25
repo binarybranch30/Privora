@@ -43,9 +43,9 @@ async def invoke(session, name, arguments):
 
 
 @asynccontextmanager
-async def subprocess_session(server, database_url):
+async def subprocess_session(server, database_url, *, receiver=None):
     params = StdioServerParameters(
-        command=sys.executable, args=["-m", "privora.downstream", server],
+        command=sys.executable, args=["-m", "privora.downstream", server] + (["--receiver", receiver] if receiver else []),
         env={"DATABASE_URL": database_url},
     )
     async with stdio_client(params) as (read, write), ClientSession(read, write) as session:

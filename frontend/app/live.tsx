@@ -1,37 +1,19 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { FileText, ShieldCheck } from "lucide-react";
+import { Workspace } from "./workspace";
+import { label, time, type Impact, type Service, type Snapshot, type View } from "./investigation-data";
+import { Status } from "./status";
+import { ProtectionPanel, type ProtectionStatus } from "./protection";
 
-type Service = { id: string; name: string; status: string; current_version: number | null; source: string; last_checked: string | null; last_attempt: string | null; fetch_status: string };
-type Version = { id: number; service_id: string; number: number; observed_at: string; source: string; content: string };
-type Change = { id: number; service_id: string; previous_id: number | null; version_id: number; enforcement: string; analysis_status: string; rule: string; reason: string; passages: { old: string; new: string }[]; clauses: { topic: string; new_interpretation: string; reason: string; uncertainty: string; review_action: string }[] };
-type Audit = { request_id: string; resource_id: string | null; classification: string | null; source_service: string | null; source_version: number | null; destination: string; destination_profile: string | null; policy_version: number | null; decision: string; delivery: string; reason: string; timestamp: string; decision_origin: string | null; policy_change_id: number | null };
-type Historical = { service_id: string; release: string; policy_url: string | null; archived_at: string; imported_at: string; content: string; passages: { old: string; new: string }[] };
-type Dashboard = {
-  services: Service[]; versions: Version[]; changes: Change[]; audit: Audit[]; archive: Historical[];
-  resources: { id: string; service_id: string; classification: string }[]; connector_configured: boolean;
-};
-type Impact = {
-  previous: { version: number; url: string } | null;
-  observed: { version: number; url: string };
-  affected_workflows: number; restricted_workflows: number; unaffected_workflows: number;
-  historical_review_candidates: number; impacted_classifications: string[];
-  workflows: {
-    id: number; resource_id: string; source_service: string; operation: string; destination: string;
-    classification: string; account_scope: string; decision: string; reason: string; affected: boolean;
-    no_training: boolean; allow_public: boolean; next_action: string;
-    historical: { previously_allowed: number; count: number; first_received: string | null; last_received: string | null;
-      events: { request_id: string; timestamp: string; classification: string | null; decision: string; delivery: string }[] };
-  }[];
+type Dashboard = Snapshot & {
+  resources: { id: string; service_id: string; classification: string }[];
+  connector_configured: boolean;
 };
 
-const label = (value: string) => value.replaceAll("_", " ");
-const time = (value: string | null) => value ? new Date(value).toLocaleString() : "—";
-
-async function request<T>(route: string, data?: object, method = "POST"): Promise<T> {
+async function request<T>(route: string, data?: object, method = "POST", signal?: AbortSignal): Promise<T> {
   const response = await fetch("/api/live/" + route, data === undefined
-    ? { cache: "no-store" }
+    ? { cache: "no-store", signal }
     : { method, headers: { "Content-Type": "application/json", "X-Privora-Live": "1" }, body: JSON.stringify(data) });
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
@@ -40,43 +22,20 @@ async function request<T>(route: string, data?: object, method = "POST"): Promis
   return await response.json();
 }
 
-function BlastRadius({ change }: { change: Change }) {
-  const [impact, setImpact] = useState<Impact>();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  async function load() {
-    setLoading(true);
-    setError("");
-    try {
-      setImpact(await request<Impact>("policy-changes/" + change.id + "/impact"));
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Unable to load impact.");
-    } finally {
-      setLoading(false);
-    }
-  }
-  return <div className="live-impact">
-    <button className="secondary" disabled={loading} onClick={() => void load()}>{loading ? "Calculating…" : impact ? "Refresh blast radius" : "View blast radius"}</button>
-    {error && <p role="alert" className="message error">{error}</p>}
-    {impact && <div>
-      <h4>Privacy blast radius</h4>
-      <p>{impact.previous ? "v" + impact.previous.version + " → " : ""}v{impact.observed.version} · <a href={impact.observed.url}>Observed policy source</a></p>
-      <p>{impact.affected_workflows} affected · {impact.restricted_workflows} restricted · {impact.unaffected_workflows} unaffected · {impact.historical_review_candidates} historical review candidates</p>
-      {!!impact.impacted_classifications.length && <p>Impacted classifications · {impact.impacted_classifications.map(label).join(", ")}</p>}
-      {!impact.workflows.length && <p>No configured workflows use this service.</p>}
-      {impact.workflows.map((workflow) => <details key={workflow.id}>
-        <summary>{workflow.source_service} → {workflow.operation} → {workflow.destination} · {label(workflow.classification)} · {label(workflow.decision)}</summary>
-        <p><strong>{workflow.resource_id}</strong> · {workflow.account_scope} · {workflow.affected ? "Affected by this change" : "Unaffected by this change"}</p>
-        <p>{workflow.no_training ? "No AI training on confidential documents" : "Explicit approval for confidential transfers"} · {workflow.allow_public ? "Public transfers allowed" : "Public transfers prohibited"}</p>
-        <p><code>{workflow.reason}</code> · {workflow.next_action}</p>
-        <p>{workflow.historical.previously_allowed} previously allowed · {workflow.historical.count} historical review candidates</p>
-        {workflow.historical.count > 0 && <>
-          <p>{time(workflow.historical.first_received)} – {time(workflow.historical.last_received)}. Review these deliveries against the applicable terms at the time.</p>
-          <ul>{workflow.historical.events.map((event) => <li key={event.request_id}>{time(event.timestamp)} · {label(event.classification ?? "Unknown")} · {label(event.decision)} / {label(event.delivery)} · <a href={"#audit-" + event.request_id}><code>{event.request_id}</code></a></li>)}</ul>
-        </>}
-      </details>)}
-    </div>}
-  </div>;
+function observeAnalyzer() {
+  return request<{ status: string }>("services/fictional_analyzer/refresh", {});
+}
+
+function loadProtection(signal?: AbortSignal) {
+  return request<ProtectionStatus>("protection", undefined, "GET", signal);
+}
+
+function mutateProtection(method: "POST" | "DELETE", launchDemo: boolean) {
+  return request<ProtectionStatus>(launchDemo && method === "POST" ? "protection/demo" : "protection/session", {}, method);
+}
+
+function loadImpact(id: number) {
+  return request<Impact>("policy-changes/" + id + "/impact");
 }
 
 function Form({ children, submit }: { children: React.ReactNode; submit: (fields: FormData) => void }) {
@@ -89,18 +48,45 @@ function Form({ children, submit }: { children: React.ReactNode; submit: (fields
   return <form className="live-form" onSubmit={handle}>{children}</form>;
 }
 
-export default function LiveDashboard() {
+const receivedAt = () => Date.now();
+const localDemo = process.env.NEXT_PUBLIC_PRIVORA_LOCAL_DEMO === "1";
+
+async function loadDashboard(signal?: AbortSignal) {
+  try {
+    return await request<Dashboard>("dashboard", undefined, "GET", signal);
+  } catch (failure) {
+    if (!localDemo || (failure as { status?: number }).status !== 401) throw failure;
+  }
+
+  const result = await fetch("/api/local-demo-session", {
+    method: "POST",
+    headers: { "X-Privora-Local-Demo": "1" },
+    signal,
+  });
+  if (!result.ok) throw new Error("Could not open the local demo session. Check the Live backend and demo settings.");
+  return request<Dashboard>("dashboard", undefined, "GET", signal);
+}
+
+export default function LiveDashboard({ view, navigate, transferDemo }: { transferDemo: boolean; view: View; navigate: (view: View) => void }) {
   const [data, setData] = useState<Dashboard>();
+  const [loading, setLoading] = useState(true);
   const [needsAuth, setNeedsAuth] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
   const [review, setReview] = useState<Service>();
+  const [lastUpdate, setLastUpdate] = useState<number>();
+  const [watchError, setWatchError] = useState(false);
+  const watching = !!data && !busy;
 
   async function refresh() {
     try {
-      setData(await request<Dashboard>("dashboard"));
+      const snapshot = await loadDashboard();
+      setData(snapshot);
       setNeedsAuth(false);
+      setLastUpdate(receivedAt());
+      setWatchError(false);
+      return snapshot;
     } catch (failure) {
       setData(undefined);
       if ((failure as { status?: number }).status === 401) setNeedsAuth(true);
@@ -109,23 +95,58 @@ export default function LiveDashboard() {
   }
   useEffect(() => {
     let active = true;
-    request<Dashboard>("dashboard").then((snapshot) => {
-      if (active) setData(snapshot);
+    loadDashboard().then((snapshot) => {
+      if (active) { setData(snapshot); setLastUpdate(receivedAt()); }
     }).catch((failure: { status?: number }) => {
       if (!active) return;
       if (failure.status === 401) setNeedsAuth(true);
-      else setError("The Live backend could not be reached. Start the Live service and retry.");
-    });
+      else setError(localDemo ? "Could not open the local demo session. Start the Live service and check the demo settings."
+        : "The Live backend could not be reached. Start the Live service and retry.");
+    }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, []);
 
-  async function run(task: () => Promise<string>) {
+  useEffect(() => {
+    if (!watching) return;
+    let active = true;
+    let pending: AbortController | undefined;
+    async function poll() {
+      if (document.visibilityState !== "visible" || pending) return;
+      pending = new AbortController();
+      try {
+        const snapshot = await loadDashboard(pending.signal);
+        if (active) {
+          setData(snapshot);
+          setLastUpdate(receivedAt());
+          setWatchError(false);
+        }
+      } catch (failure) {
+        if (!active) return;
+        if ((failure as { status?: number }).status === 401) {
+          setData(undefined);
+          setNeedsAuth(true);
+          setReview(undefined);
+        } else setWatchError(true);
+      } finally { pending = undefined; }
+    }
+    const timer = window.setInterval(() => void poll(), 15_000);
+    document.addEventListener("visibilitychange", poll);
+    return () => {
+      active = false;
+      pending?.abort();
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", poll);
+    };
+  }, [watching]);
+
+  async function run(task: () => Promise<string | ((snapshot: Dashboard) => string)>) {
     setBusy(true);
     setError("");
     setFeedback("");
     try {
-      setFeedback(await task());
-      await refresh();
+      const result = await task();
+      const snapshot = await refresh();
+      if (snapshot) setFeedback(typeof result === "string" ? result : result(snapshot));
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Request failed.");
     } finally {
@@ -133,116 +154,148 @@ export default function LiveDashboard() {
     }
   }
 
-  return <main className="shell live-shell">
-    <section className="intro"><div><h1>Live privacy firewall</h1><p>Observed provider policies, authorized connectors and transfer decisions.</p></div>{data && <span className="connection"><ShieldCheck size={17} /> Live session</span>}</section>
+  const analyzer = data?.services.find(item => item.id === "fictional_analyzer");
+
+  function reviewForm(id: string) {
+    const inline = id === "overview-policy-review";
+    if (!review) return null;
+    const simple = inline && transferDemo;
+    const policy = data?.versions.find(item => item.service_id === review.id && item.number === review.current_version);
+    return <section className="section panel live-panel" id={id} tabIndex={-1}>
+        <h2>{inline ? "Review the analyzer's terms" : "Review " + review.name}</h2>
+        <p className="muted">Confirm that these terms apply to your test. If the terms change, Privora requires a new review.</p>
+        {policy && <details className="policy-review-terms" open={inline}><summary>Current terms</summary><pre>{policy.content}</pre>{!simple && <small className="muted">Recorded revision {policy.number}</small>}</details>}
+        <Form submit={(fields) => void run(async () => {
+          if (simple && (!policy || !fields.has("confirm_terms"))) throw new Error("Read and confirm the current terms first.");
+          const result = await request<{ status: string }>("services/" + review.id + "/review", {
+            version: review.current_version,
+            applicability: simple ? "VERIFIED" : fields.get("applicability"),
+            opt_out: simple ? "NOT_REQUIRED" : fields.get("opt_out"),
+            agreement: simple ? ("Reviewed fictional terms: " + policy?.content).slice(0, 2000) : fields.get("agreement"),
+            no_training: simple ? fields.has("confirm_terms") : fields.has("no_training"),
+          });
+          setReview(undefined);
+          return result.status === "APPROVED" ? (simple ? "" : "Terms approved. You can start monitoring.") : "Review saved. Confidential transfers still require approval.";
+        })}>
+          {simple ? <label className="live-check"><input name="confirm_terms" type="checkbox" required />
+            I confirm these terms apply to this test and exclude submitted files from training without requiring an opt-out.
+          </label> : <>
+          <label>Do these terms apply to this integration?<select name="applicability"><option value="UNKNOWN">Unknown</option><option value="VERIFIED">Yes, I verified they apply</option></select></label>
+          <label>Training opt-out<select name="opt_out"><option value="UNKNOWN">Unknown</option><option value="VERIFIED">Verified</option><option value="NOT_REQUIRED">Not required</option></select></label>
+          <label>Evidence for your decision<textarea name="agreement" required placeholder="Quote the relevant clause or describe what you verified." minLength={10} maxLength={2000} /></label>
+          <label className="live-check"><input name="no_training" type="checkbox" /> I verified that submitted documents are excluded from training</label>
+          </>}
+          <button className="primary" disabled={busy || (simple && !policy)}>{simple ? "Approve these terms" : "Save policy review"}</button>
+          <button type="button" className="ghost" onClick={() => setReview(undefined)}>Cancel</button>
+        </Form>
+      </section>;
+  }
+
+  return <main className="workspace-shell" id="workspace" tabIndex={-1}>
+    {!data && <div className="workspace-heading"><div><h1>Live workspace</h1><p>{localDemo ? "Opening the local Live demo." : transferDemo ? "Sign in to run the transfer protection demo." : "Sign in to watch recorded policy incidents. For a local synthetic scenario, switch to Demo."}</p></div></div>}
     {error && <p role="alert" className="message error">{error}</p>}
     {feedback && <p role="status" className="message">{feedback}</p>}
-    {!data && !needsAuth && <button className="secondary" disabled={busy} onClick={() => void run(async () => "Live state refreshed.")}>Refresh Live state</button>}
-    {needsAuth && <section className="panel live-panel">
+    {loading && <p role="status" className="message">Connecting to Live Mode...</p>}
+    {!loading && !data && (!needsAuth || localDemo) && <button className="secondary" disabled={busy} onClick={() => void run(async () => "Live state refreshed.")}>Refresh Live state</button>}
+    {needsAuth && !localDemo && <section className="panel live-panel live-signin">
       <h2>Sign in to Live Mode</h2>
       <Form submit={(fields) => void run(async () => { await request("session", { secret: fields.get("secret") }); return "Live session started."; })}>
         <label>Live admin secret<input name="secret" type="password" required autoComplete="current-password" /></label>
         <button className="primary" disabled={busy}>Sign in</button>
       </Form>
     </section>}
-    {data && <>
-      <div className="live-toolbar">
-        <span>GitHub MCP {data.connector_configured ? "configured" : "unconfigured"}</span>
-        <button className="ghost" disabled={busy} onClick={() => void run(async () => { await request("session", {}, "DELETE"); setData(undefined); setReview(undefined); return "Live session ended."; })}>Sign out</button>
-      </div>
-      <section className="section">
-        <h2>Live services</h2>
-        <div className="panel table-wrap"><table><thead><tr><th>Service and source</th><th>Policy</th><th>Fetch status</th><th>Last fetched</th><th>Actions</th></tr></thead><tbody>
-          {data.services.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><small>{item.source}</small></td><td>{label(item.status)} · {item.current_version ? "v" + item.current_version : "—"}</td><td>{label(item.fetch_status)}<small>{item.last_attempt && "Attempt " + time(item.last_attempt)}</small></td><td>{time(item.last_checked)}</td><td className="live-row-actions">
-            {item.fetch_status !== "LOCAL_PROFILE" && <button className="ghost" disabled={busy} onClick={() => void run(async () => {
-              const result = await request<{ status: string; changed: boolean }>("services/" + item.id + "/refresh", {});
-              return result.status !== "OK" ? "Policy refresh: " + label(result.status) : result.changed ? "New policy observed. Review required." : "Policy unchanged.";
-            })}>Refresh policy</button>}
-            <button className="secondary" disabled={busy || !item.current_version} onClick={() => setReview(item)}>Review</button>
-          </td></tr>)}
-        </tbody></table></div>
-      </section>
-      {review && <section className="section panel live-panel">
-        <h2>Review {review.name} · v{review.current_version}</h2>
-        <p className="muted">Verify account-specific terms and opt-out status before approving confidential transfers.</p>
-        <Form submit={(fields) => void run(async () => {
-          const result = await request<{ status: string }>("services/" + review.id + "/review", {
-            version: review.current_version, applicability: fields.get("applicability"), opt_out: fields.get("opt_out"),
-            agreement: fields.get("agreement"), no_training: fields.has("no_training"),
-          });
+    {data && <Workspace transferDemo={transferDemo} view={view} navigate={navigate} live data={{ ...data, workflows: data.workflows ?? [] }} loadImpact={loadImpact} connectorConfigured={data.connector_configured}
+      protection={open => <ProtectionPanel fetchStatus={loadProtection} mutate={mutateProtection} investigate={open}
+        analyzer={analyzer}
+        analyzerTerms={data.versions.find(policy => policy.service_id === analyzer?.id && policy.number === analyzer.current_version)?.content}
+        busyReview={busy}
+        review={review?.id === analyzer?.id ? reviewForm("overview-policy-review") : null}
+        observeSavedPolicy={async () => {
           setReview(undefined);
-          return "Review recorded: " + label(result.status);
-        })}>
-          <label>Account applicability<select name="applicability"><option value="UNKNOWN">Unknown</option><option value="VERIFIED">Verified</option></select></label>
-          <label>Opt-out status<select name="opt_out"><option value="UNKNOWN">Unknown</option><option value="VERIFIED">Verified</option><option value="NOT_REQUIRED">Not required</option></select></label>
-          <label>Verification evidence<textarea name="agreement" required minLength={10} maxLength={2000} /></label>
-          <label className="live-check"><input name="no_training" type="checkbox" /> No training verified</label>
-          <button className="primary" disabled={busy}>Save review</button>
-          <button type="button" className="ghost" onClick={() => setReview(undefined)}>Cancel</button>
-        </Form>
-      </section>}
-      <section className="section panel live-panel">
-        <h2>Add a policy source</h2>
-        <Form submit={(fields) => void run(async () => {
-          await request("services", Object.fromEntries(fields));
-          return "Service registered. Refresh its policy to observe the first version.";
-        })}>
-          <label>Service ID<input name="id" type="text" required pattern="[a-z][a-z0-9_\-]{0,79}" placeholder="github" /></label>
-          <label>Provider name<input name="name" type="text" required maxLength={150} /></label>
-          <label>Policy URL<input name="url" type="url" required placeholder="https://" /></label>
-          <button className="primary" disabled={busy}>Add service</button>
-        </Form>
-      </section>
-      {data.connector_configured && <section className="section panel live-panel">
-        <h2>Register a GitHub resource</h2>
-        <Form submit={(fields) => void run(async () => { await request("resources", Object.fromEntries(fields)); return "GitHub resource registered."; })}>
-          <label>Resource ID<input required name="id" /></label><label>Policy service ID<input required name="service_id" /></label>
-          <label>Text file path<input required name="path" placeholder="README.md" /></label><label>Commit SHA<input required name="commit" minLength={40} maxLength={40} /></label>
-          <label>Classification<select name="classification"><option>CONFIDENTIAL</option><option>PUBLIC</option></select></label>
-          <button className="primary" disabled={busy}>Register resource</button>
-        </Form>
-        <p className="muted">{data.resources.length ? data.resources.map((item) => item.id + " · " + item.classification).join(" | ") : "No resources registered."}</p>
-        {data.services.some((service) => service.id === "fictional_analyzer") && data.resources.length > 0 && <Form submit={(fields) => void run(async () => {
-          await request("workflows", { resource_id: fields.get("resource_id"), destination: "fictional_analyzer" });
-          return "Workflow bound to the fictional monitored analyzer.";
-        })}>
-          <label>Resource for monitored analyzer<select name="resource_id">{data.resources.map((item) => <option key={item.id}>{item.id}</option>)}</select></label>
-          <button className="secondary" disabled={busy}>Bind workflow</button>
-        </Form>}
-      </section>}
+          const observation = await observeAnalyzer();
+          const snapshot = await refresh();
+          if (observation.status !== "OK" || !snapshot) {
+            throw new Error("Could not read the saved terms. Check that the HTTPS policy server is running.");
+          }
+          return snapshot.services.find(item => item.id === "fictional_analyzer");
+        }}
+        openReview={service => {
+          setReview(service);
+          requestAnimationFrame(() => document.getElementById("overview-policy-review")?.focus());
+        }}
+        refreshReadiness={async () => { await refresh(); }}
+        checkPolicy={() => run(async () => {
+          setReview(undefined);
+          const result = await observeAnalyzer();
+          if (result.status !== "OK") return "Could not read the saved terms. Check that the HTTPS policy server is running.";
+          return snapshot => snapshot.services.find(service => service.id === "fictional_analyzer")?.status === "APPROVED"
+            ? "Saved terms checked and approved. You can start Privora."
+            : "Saved terms checked. Click Start Privora to review them. If they allow AI training, restore the no-training sentence in privacy.txt and check again.";
+        })} />}
+      reviewService={id => {
+        const service = data.services.find(item => item.id === id);
+        if (!service?.current_version || busy) return;
+        setReview(service);
+        navigate("configuration");
+        requestAnimationFrame(() => document.getElementById("live-policy-review")?.focus());
+      }}
+      toolbar={<>
+        {!transferDemo && <><span className="muted" title="Refreshes every 15 seconds while this tab is visible">{watchError ? "Watch disconnected / Showing last snapshot"
+          : lastUpdate ? "Watching Live / " + new Date(lastUpdate).toLocaleTimeString() : "Watching Live"}</span>
+        <button className="ghost" disabled={busy} onClick={() => void run(async () => "Live state refreshed.")}>Refresh evidence</button></>}
+        {!localDemo && <button className="ghost" disabled={busy} onClick={() => void run(async () => { await request("session", {}, "DELETE"); setData(undefined); setReview(undefined); return "Live session ended."; })}>Sign out</button>}
+      </>}
+      serviceActions={id => data.services.some(item => item.id === id) && <button className="ghost" onClick={() => navigate("configuration")}>Manage service</button>}
+      configuration={<>
+        <p>Use this page to manage policy sources and GitHub files. To run the transfer test, start on <button className="ghost" onClick={() => navigate("overview")}>Overview</button>.</p>
+        <p className="muted">GitHub MCP {data.connector_configured ? "configured" : "unconfigured"}</p>
+        <section className="section"><h2>Policy services</h2>
+          {data.services.map(item => <div className="service-row" key={item.id}>
+            <div><strong>{item.name}</strong><small>{item.source}</small></div>
+            <div><Status value={item.status} /><small>{label(item.fetch_status ?? "UNKNOWN")} / {time(item.last_checked)}</small></div>
+            <div className="actions">
+              {item.fetch_status !== "LOCAL_PROFILE" && <button className="ghost" disabled={busy} onClick={() => void run(async () => {
+                const result = await request<{ status: string; changed: boolean }>("services/" + item.id + "/refresh", {});
+                return result.status !== "OK" ? "Policy refresh: " + label(result.status) : result.changed ? "New policy version observed." : "Policy unchanged.";
+              })}>Refresh policy</button>}
+              <button className="secondary" disabled={busy || !item.current_version} onClick={() => setReview(item)}>Review</button>
+            </div>
+          </div>)}
+        </section>
+      {reviewForm("live-policy-review")}
       <section className="section">
-        <h2>Observed policy changes</h2>
-        {data.changes.length === 0 && <div className="panel empty">No observed changes.</div>}
-        {data.changes.map((change) => <article className="panel evidence" key={change.id} id={"policy-change-" + change.id}>
-          <div className="evidence-head"><h3><FileText size={18} />{change.service_id} · {label(change.reason)}</h3><span className="muted">{change.rule}</span></div>
-          <p className="evidence-footer">{data.versions.find((item) => item.id === change.previous_id)?.number ? "v" + data.versions.find((item) => item.id === change.previous_id)?.number + " → " : ""}v{data.versions.find((item) => item.id === change.version_id)?.number ?? "—"} · {label(change.enforcement)}</p>
-          {change.passages.map((passage, index) => <div className="diff" key={index}><div><span>Previous</span><p><mark>{passage.old || "First observation"}</mark></p></div><div><span>Observed</span><p><mark>{passage.new || "Clause removed"}</mark></p></div></div>)}
-          {change.clauses.map((clause, index) => <p className="evidence-footer" key={index}>{clause.topic} · {clause.new_interpretation} {clause.reason}<br />{clause.uncertainty} {clause.review_action}</p>)}
-          <p className="evidence-footer">Applicability requires human verification. Extraction {label(change.analysis_status).toLowerCase()}.</p>
-          <BlastRadius change={change} />
-        </article>)}
+        <h2>Advanced setup</h2>
+        <details className="panel live-panel">
+          <summary>Add a policy source</summary>
+          <Form submit={(fields) => void run(async () => {
+            await request("services", Object.fromEntries(fields));
+            return "Service registered. Refresh its policy to observe the first version.";
+          })}>
+            <label>Service ID<input name="id" type="text" required pattern="[a-z][a-z0-9_\-]{0,79}" placeholder="github" /></label>
+            <label>Provider name<input name="name" type="text" required maxLength={150} /></label>
+            <label>Policy URL<input name="url" type="url" required placeholder="https://" /></label>
+            <button className="primary" disabled={busy}>Add service</button>
+          </Form>
+        </details>
+        {data.connector_configured && <details className="panel live-panel">
+          <summary>Manage GitHub resources</summary>
+          <Form submit={(fields) => void run(async () => { await request("resources", Object.fromEntries(fields)); return "GitHub resource registered."; })}>
+            <label>Resource ID<input required name="id" /></label><label>Policy service ID<input required name="service_id" /></label>
+            <label>Text file path<input required name="path" placeholder="README.md" /></label><label>Commit SHA<input required name="commit" minLength={40} maxLength={40} /></label>
+            <label>Classification<select name="classification"><option>CONFIDENTIAL</option><option>PUBLIC</option></select></label>
+            <button className="primary" disabled={busy}>Register resource</button>
+          </Form>
+          <p className="muted">{data.resources.length ? data.resources.map((item) => item.id + " · " + item.classification).join(" | ") : "No resources registered."}</p>
+          {data.services.some((service) => service.id === "fictional_analyzer") && data.resources.length > 0 && <Form submit={(fields) => void run(async () => {
+            await request("workflows", { resource_id: fields.get("resource_id"), destination: fields.get("destination") });
+            return "Workflow bound to the selected analyzer.";
+          })}>
+            <label>Resource for monitored analyzer<select name="resource_id">{data.resources.map((item) => <option key={item.id}>{item.id}</option>)}</select></label>
+            <label>Destination<select name="destination">{data.services.filter(item => ["fictional_analyzer", "fictional_analyzer_b"].includes(item.id)).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+            <button className="secondary" disabled={busy}>Bind workflow</button>
+          </Form>}
+        </details>}
       </section>
-      <section className="section">
-        <h2>Policy version history</h2>
-        {data.versions.map((version) => <details className="panel live-panel" key={version.id}><summary>{version.service_id} · v{version.number} · {time(version.observed_at)}</summary><p className="muted">{version.source}</p><pre>{version.content}</pre></details>)}
-        {data.archive.map((item) => <details className="panel live-panel" key={item.release + item.service_id + item.archived_at}><summary>{item.service_id} · Archive · {time(item.archived_at)}</summary><p className="muted">Imported {time(item.imported_at)} · {item.policy_url ?? "Original URL unavailable"}</p><a href={item.release}>Dataset release</a>{item.passages.map((passage, index) => <div className="diff" key={index}><div><span>Prior archive version</span><p>{passage.old || "Clause added"}</p></div><div><span>This archive version</span><p>{passage.new || "Clause removed"}</p></div></div>)}<pre>{item.content}</pre></details>)}
-      </section>
-      <section className="section">
-        <h2>Live transfer audit</h2>
-        <div className="panel table-wrap"><table><thead><tr><th>Time / request ID</th><th>Resource</th><th>Source policy</th><th>Analyzer policy</th><th>Decision</th><th>Reason</th><th>Delivery</th></tr></thead><tbody>
-          {data.audit.map((row) => <tr key={row.request_id} id={"audit-" + row.request_id}>
-            <td>{time(row.timestamp)}<small><code>{row.request_id}</code></small></td>
-            <td>{row.resource_id ?? "—"}{row.classification && <small>{label(row.classification)}</small>}</td>
-            <td>{row.source_service ?? "—"}{row.source_version ? " · v" + row.source_version : ""}</td>
-            <td>{row.destination_profile ?? row.destination}{row.policy_version ? " · v" + row.policy_version : ""}</td>
-            <td>{label(row.decision)}</td><td><code>{row.reason}</code>
-              {row.decision_origin && <small>{label(row.decision_origin)}</small>}
-              {row.policy_change_id && <small><a href={"#policy-change-" + row.policy_change_id}>Policy change evidence</a></small>}
-            </td><td>{label(row.delivery)}</td>
-          </tr>)}
-          {!data.audit.length && <tr><td colSpan={7} className="empty">No Live transfers recorded.</td></tr>}
-        </tbody></table></div>
-      </section>
-    </>}
+      </>} />}
   </main>;
 }

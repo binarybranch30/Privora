@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from datetime import timezone
+from types import SimpleNamespace
 from uuid import uuid4
 
 from mcp.server.fastmcp import FastMCP
@@ -11,7 +12,7 @@ from .engine import Decision, evaluate
 from .gateway import Analysis, ToolDecision, invoke, locked_service, subprocess_session
 from .live_connector import github_text
 from .live_models import LiveResource, LiveSource, LiveTrace, LiveTransition, LiveWorkflow
-from .live_policy import MONITORED_ANALYZER, active_drift, has_current_review
+from .live_policy import MONITORED_ANALYZERS, active_drift, has_current_review
 
 ORG = "live-org"
 ANALYZER = "local_analyzer"
@@ -27,20 +28,27 @@ def fresh(service, source, seconds):
     return (now() - timestamp).total_seconds() <= seconds
 
 
-def workflow_decision(db, resource, workflow, source, destination, stale_seconds, *, monitored_enabled=True):
+def workflow_decision(db, resource, workflow, source, destination, stale_seconds, *, monitored_enabled=True, rehearsal_restored=False):
     classification = resource.classification
     rule = db.get(Rule, workflow.rule_id)
     destination_drift = active_drift(db, destination)
     source_drift = active_drift(db, source)
-    monitored = workflow.destination == MONITORED_ANALYZER
+    monitored = workflow.destination in MONITORED_ANALYZERS
     if monitored and not monitored_enabled:
         return Decision("BLOCK", "DESTINATION_DISABLED"), "CONFIGURATION", None
-    result = evaluate(classification, destination, rule)
+    effective_destination = destination
+    if rehearsal_restored:
+        effective_destination = SimpleNamespace(
+            enabled=destination.enabled, status="APPROVED", current_version=destination.current_version,
+            approved_version=destination.current_version, verified_no_training=True,
+        )
+    result = evaluate(classification, effective_destination, rule)
     if result.decision != "ALLOW":
         if destination_drift and classification == "CONFIDENTIAL" and result.decision == "REVIEW_REQUIRED":
             return result, "POLICY_DRIFT", destination_drift.id
         return result, decision_origin(db, destination, result), None
-    approved = destination.status == "APPROVED" and destination.approved_version == destination.current_version
+    approved = (effective_destination.status == "APPROVED"
+                and effective_destination.approved_version == destination.current_version)
     if not approved:
         transition = db.get(LiveTransition, destination_drift.id) if destination_drift else None
         public_drift = monitored and classification == "PUBLIC" and transition and transition.invalidated
@@ -58,6 +66,8 @@ def workflow_decision(db, resource, workflow, source, destination, stale_seconds
     result = evaluate(classification, source, rule)
     if source_drift and result.decision == "REVIEW_REQUIRED":
         return result, "POLICY_DRIFT", source_drift.id
+    if rehearsal_restored and result.decision == "ALLOW":
+        return result, "REHEARSAL_BASELINE_RESTORED", destination_drift.id if destination_drift else None
     return result, decision_origin(db, source, result), None
 
 
@@ -69,25 +79,23 @@ def decision_origin(db, service, decision):
     return "ORGANIZATION_RULE"
 
 
-def live_gateway(settings, db_factory, lock, read_file=github_text):
-    mcp = FastMCP("Privora Live", stateless_http=True, json_response=True, streamable_http_path="/")
-
-    @mcp.tool()
-    async def analyze_document(document_id: str, destination_service: str) -> ToolDecision:
-        """Analyze a registered GitHub text resource through the approved local analyzer."""
-        request_id = str(uuid4())
+def live_transfer(settings, db_factory, lock, read_file=github_text):
+    async def transfer(document_id, destination_service, *, request_id=None, admission=None, rehearsal_restore=None):
+        request_id = request_id or str(uuid4())
         classification = source_version = destination_version = analysis = resource = source = destination = workflow = None
         change_id, origin = None, "CONFIGURATION"
         delivery = "NOT_SENT"
         decision = Decision("BLOCK", "UNKNOWN_DOCUMENT")
         async with lock:
             with db_factory.begin() as db:
+                if admission is not None and not admission(db):
+                    return None
                 resource = db.get(LiveResource, document_id) if 0 < len(document_id) <= 80 else None
                 if resource:
                     classification = resource.classification
                     source = locked_service(db, resource.service_id)
                     source_version = source.current_version if source else None
-                    if destination_service in {ANALYZER, MONITORED_ANALYZER}:
+                    if destination_service in MONITORED_ANALYZERS or destination_service == ANALYZER:
                         workflow = db.scalar(select(LiveWorkflow).where(
                             LiveWorkflow.resource_id == resource.id, LiveWorkflow.destination == destination_service,
                         ))
@@ -97,15 +105,20 @@ def live_gateway(settings, db_factory, lock, read_file=github_text):
                     if destination:
                         decision, origin, change_id = workflow_decision(
                             db, resource, workflow, source, destination, settings.stale_seconds,
-                            monitored_enabled=bool(settings.analyzer_policy_url),
+                            monitored_enabled=bool(settings.analyzer_b_policy_url if destination_service == "fictional_analyzer_b"
+                                                   else settings.analyzer_policy_url),
+                            rehearsal_restored=bool(rehearsal_restore and rehearsal_restore(db, resource, destination)),
                         )
                     if decision.decision == "ALLOW":
                         try:
                             async with asyncio.timeout(25):
                                 body = await read_file(settings, resource.repository, resource.path, resource.commit)
-                                async with subprocess_session("analyzer", settings.database_url) as analyzer:
+                                async with subprocess_session("analyzer", settings.database_url, receiver=destination.id) as analyzer:
                                     delivery = "UNKNOWN"
-                                    result = Analysis.model_validate(await invoke(analyzer, "analyze_content", {"content": body, "request_id": request_id}))
+                                    arguments = {"content": body, "request_id": request_id}
+                                    if admission is not None:
+                                        arguments["record_byte_count"] = True
+                                    result = Analysis.model_validate(await invoke(analyzer, "analyze_content", arguments))
                                     if result.request_id != request_id:
                                         raise ValueError("Receipt ID mismatch")
                                     analysis, delivery = result, "RECEIVED"
@@ -126,4 +139,20 @@ def live_gateway(settings, db_factory, lock, read_file=github_text):
         return ToolDecision(request_id=request_id, decision=decision.decision, reason=decision.reason, classification=classification,
                             policy_version=destination_version, delivery=delivery, analysis=analysis)
 
+    return transfer
+
+
+def live_gateway(settings, db_factory, lock, read_file=github_text, *, transfer=None, submit_job=None, submit_lanes=None):
+    mcp = FastMCP("Privora Live", stateless_http=True, json_response=True, streamable_http_path="/")
+    transfer = transfer or live_transfer(settings, db_factory, lock, read_file)
+
+    @mcp.tool()
+    async def analyze_document(document_id: str, destination_service: str) -> ToolDecision:
+        """Analyze a registered GitHub text resource through the approved local analyzer."""
+        return await transfer(document_id, destination_service)
+
+    if submit_job:
+        mcp.tool()(submit_job)
+    if submit_lanes:
+        mcp.tool()(submit_lanes)
     return mcp

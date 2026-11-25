@@ -1,0 +1,1 @@
+Customer-submitted documents are not used for AI model training.

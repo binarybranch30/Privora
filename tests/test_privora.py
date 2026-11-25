@@ -51,6 +51,7 @@ async def test_real_mcp_drift_and_receipts(database, monkeypatch):
         async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as http:
             assert (await http.post("/api/demo/reset")).status_code == 200
             assert (await http.get("/api/demo/receipts")).json()["count"] == 0
+            assert (await http.get("/api/demo/policy-changes/1/impact")).status_code == 404
             first = await call_gateway("http://localhost:8000/mcp/", CONFIDENTIAL, transport)
             assert (first.decision, first.reason, first.policy_version, first.delivery) == (
                 "ALLOW", "POLICY_APPROVED", 1, "RECEIVED",
@@ -73,6 +74,17 @@ async def test_real_mcp_drift_and_receipts(database, monkeypatch):
             changes = (await http.get("/api/policies/changes")).json()
             assert len(changes) == 1 and changes[0]["analysis_status"] == "COMPLETE"
             assert changes[0]["clauses"][0]["new_clause"] == versions[0]["content"]
+            impact_path = f"/api/demo/policy-changes/{changes[0]['id']}/impact"
+            impact_response = await http.get(impact_path)
+            assert impact_response.status_code == 200, impact_response.text
+            impact = impact_response.json()
+            assert (impact["affected_workflows"], impact["restricted_workflows"], impact["unaffected_workflows"],
+                    impact["historical_review_candidates"]) == (1, 1, 1, 1)
+            confidential_impact, public_impact = impact["workflows"]
+            assert (confidential_impact["decision"], confidential_impact["reason"]) == (second.decision, second.reason)
+            assert confidential_impact["historical"]["request_ids"] == [first.request_id]
+            assert public_impact["decision"] == "ALLOW" and not public_impact["affected"]
+            assert (await http.get("/api/demo/receipts")).json() == receipts
 
             public = await http.post("/api/demo/analyze", json={"document_id": "public_001"})
             assert (public.json()["decision"], public.json()["delivery"]) == ("ALLOW", "RECEIVED")
@@ -99,6 +111,9 @@ async def test_real_mcp_drift_and_receipts(database, monkeypatch):
             restored = await call_gateway("http://localhost:8000/mcp/", CONFIDENTIAL, transport)
             assert restored.delivery == "RECEIVED"
             assert (await http.get("/api/demo/receipts")).json()["count"] == 3
+            restored_impact = (await http.get(impact_path)).json()
+            assert restored_impact["restricted_workflows"] == 0
+            assert restored_impact["historical_review_candidates"] == 1
 
     async with subprocess_session("documents", database) as documents:
         result = await documents.call_tool("document_metadata", {"document_id": "confidential_001"})
@@ -126,4 +141,5 @@ async def test_malformed_extraction_and_disabled_demo(database):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://localhost") as http:
             for route in ("reset", "simulate-policy-change", "analyze"):
                 assert (await http.post(f"/api/demo/{route}")).status_code == 404
+            assert (await http.get("/api/demo/policy-changes/1/impact")).status_code == 404
             assert (await http.get("/api/health")).json()["demo_mode"] is False

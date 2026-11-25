@@ -6,6 +6,8 @@ from .db import Change, Version
 from .live_models import LiveReview, LiveTransition
 
 MONITORED_ANALYZER = "fictional_analyzer"
+SECOND_ANALYZER = "fictional_analyzer_b"
+MONITORED_ANALYZERS = frozenset({MONITORED_ANALYZER, SECOND_ANALYZER})
 MONITORED_SCOPE = "synthetic-fixture"
 LOCAL_SCOPE = "local-controlled"
 

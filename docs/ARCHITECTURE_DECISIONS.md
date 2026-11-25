@@ -17,3 +17,29 @@ Approval was provided in the project conversation following the Phase 2 proposal
 - Store explicit Live workflow bindings and provenance links with an additive migration. Compute blast radius on demand using the existing deterministic gate and persisted audit. Keep historical records intact and label earlier deliveries as review candidates.
 
 The user explicitly approved these four decisions in the project conversation.
+
+## Investigation UI · Approved
+
+- Render the network from stored workflow bindings and use the existing deterministic evaluator for a read-only decision snapshot in the authenticated Live dashboard response. Keep authorization decisions, recorded events, and analyzer delivery separate.
+- Share the investigation shell across environments. Demo uses its synthetic fixture paths and real gateway outcomes. Live impact remains change-scoped and uses the existing impact API.
+
+## Always-on transfer protection · Approved
+
+- Add an opt-in, single-worker Live queue for explicitly allowlisted synthetic resource IDs bound to the controlled analyzer. Queue items enter the same locked per-document evaluator and forwarding path as direct MCP calls. An item admitted before observation commits may complete.
+- Persist session, job and item IDs in Live storage. Receiver bytes are nullable on older receipts. Restart reconciliation uses the original request ID and never resends a claimed item with an uncertain outcome.
+- During a protected session, observe only the dedicated fictional HTTPS fixture at the shorter cadence. Keep the existing HTTPS validation, approval rules, and ordinary source schedule. Use authenticated polling for UI progress.
+- Keep the unprotected comparison in a standalone loopback process with internally generated data. It has no Live inputs, connector, database or forwarding endpoint. Chunked transfer and partial-file staging are outside this design.
+
+## One-click protected rehearsal
+
+- Enable the launcher only in the opt-in Live rehearsal configuration with a designated, allowlisted confidential fixture and a bounded batch.
+- Use the existing admin mutation boundary to start the rehearsal. Use the separately authenticated loopback MCP endpoint to submit the server-configured job. Keep the MCP credential server-side and derive the job ID from the active session for retries.
+- Keep the existing HTTPS observer, per-document authorization, receipt model, and separate Live database. Browser progress reads use the existing authenticated protection snapshot.
+
+- Dashboard-launched synthetic batches hold unclaimed files during policy conflict or observation failure. After a fresh HTTPS observation of the same source and exact reviewed starting content, only the synthetic batch can use its starting approval. The per-file decision still checks source approval and organization rules. The persisted service approval and ordinary Live MCP behavior are unchanged.
+
+## Three-lane rehearsal · Approved
+
+- Provision Analyzer B as an independent monitored service with a separate loopback HTTPS policy. Reuse the controlled receiver code with its identity pinned by the gateway at process launch. Persist receiver identity for new receipts and leave older receipts intact.
+- Use an additive Live queue migration for lane, destination, and starting revision. An authenticated admin launch uses a session-scoped token to submit all three configured lanes atomically through MCP. The single worker interleaves whole files and skips a held lane while the other lanes remain eligible.
+- Aggregate incident evidence by observed change, persisted lane, and identified receiver receipt. Report waiting holds separately from explicit gateway denials. Count post-observation deliveries only when receipts confirm them.

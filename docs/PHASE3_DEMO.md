@@ -19,7 +19,7 @@ uv run python -m scripts.serve_policy_fixture --cert $cert --key $key --state $s
 
 Set `LIVE_ANALYZER_POLICY_URL=https://127.0.0.1:8443/privacy` and `LIVE_POLICY_FIXTURE_CA=<absolute path to fixture.crt>` in the ignored `.env.live`. Reserve the development certificate for this fixture. The standard public HTTPS fetch path continues to reject loopback addresses. A team-controlled public HTTPS endpoint also works if its hostname is on the allowlist and fixture-CA mode is disabled.
 
-Apply the migration with `uv run python -m privora.live_setup migrate` from the Live-configured terminal, then start Live Mode. Keep that process running through both policy observations. Refresh **Fictional monitored analyzer** in Live services. For a newly provisioned test destination the SAFE clause appears as v1. Approve the exact version after verifying that the fictional terms and the local analyzer's no-training handling apply.
+Apply the migration with `uv run python -m privora.live_setup migrate` from the Live-configured terminal, then start Live Mode. Keep that process running through both policy observations. Refresh **Fictional monitored analyzer** in Live **Configuration**. For a newly provisioned test destination the SAFE clause appears as v1. Approve the exact version after verifying that the fictional terms and the local analyzer's no-training handling apply.
 
 ## Register and run the GitHub fixture
 
@@ -40,14 +40,14 @@ From another terminal, change only the file served by the fixture:
 [IO.File]::WriteAllText((Join-Path $env:TEMP "policyguard-phase3-tls/version.txt"), "2")
 ```
 
-Refresh the fictional analyzer policy from Live services, or wait for the normal scheduler. The dashboard shows the observed training clause, v2, and review-required status. Reissue the same transfer. The extra command-line flags verify the result and do not change the MCP arguments.
+Refresh the fictional analyzer policy from **Configuration**, or wait for the normal scheduler. The dashboard shows the observed training clause, v2, and review-required status. Reissue the same transfer. The extra command-line flags verify the result and do not change the MCP arguments.
 
 ```powershell
 uv run python -m privora.live_client <confidential-resource> --destination fictional_analyzer --expect blocked --reason AI_TRAINING_CONFLICT
 uv run python -m privora.live_client <public-resource> --destination fictional_analyzer --expect allowed
 ```
 
-The blocked request has no analysis and no analyzer receipt. Under **Observed policy changes**, open the fictional analyzer change and select **View blast radius**. Expand a workflow to see its rule, decision, prior delivery count and request IDs. Historical review candidates warrant review of the applicable terms at the time.
+The blocked request has no analysis and no analyzer receipt. In **Policy Intelligence**, open the fictional analyzer change and select **View blast radius**. Expand a workflow to see its rule, decision, prior delivery count and request IDs. Historical review candidates warrant review of the applicable terms at the time.
 
 ## Reset only the fictional fixture
 
