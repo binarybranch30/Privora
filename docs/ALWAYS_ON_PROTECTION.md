@@ -59,7 +59,7 @@ $tls = Join-Path $env:TEMP 'privora-queue-tls'
 
 Set `LIVE_ANALYZER_POLICY_URL=https://127.0.0.1:8446/privacy`, `LIVE_ANALYZER_B_POLICY_URL=https://127.0.0.1:8447/privacy`, and `LIVE_DEMO_PUBLIC_RESOURCE=github_synthetic_fixture` alongside the existing confidential fixture and port settings. A previously provisioned analyzer keeps its configured URL. Use a separate rehearsal database when changing that URL.
 
-Bind both fixtures to both analyzers. In Settings, observe and independently review each analyzer's no-training terms. Click **Start Live Demo** from Overview. It queues 13 confidential and 7 public synthetic files per analyzer. Once the lanes have deliveries, edit only [Analyzer A's policy](../privacy.txt) to permit training. Leave [Analyzer B's policy](../privacy-analyzer-b.txt) unchanged. The animated gateway follows observed file processing and new receiver receipts automatically.
+Bind both fixtures to both analyzers. In Settings, observe and independently review Analyzer B's no-training terms. Click **Start Privora** from Overview to load Analyzer A's currently served terms. Select **Approve and start Privora** to queue 13 confidential and 7 public synthetic files per analyzer. Once the lanes have deliveries, edit only [Analyzer A's policy](../privacy.txt) to permit training. Leave [Analyzer B's policy](../privacy-analyzer-b.txt) unchanged. The animated gateway follows observed file processing and new receiver receipts automatically.
 
 ## Start the comparison from Overview
 

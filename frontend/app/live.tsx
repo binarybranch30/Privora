@@ -139,14 +139,14 @@ export default function LiveDashboard({ view, navigate, transferDemo }: { transf
     };
   }, [watching]);
 
-  async function run(task: () => Promise<string | ((snapshot: Dashboard) => string)>) {
+  async function run(task: () => Promise<string>) {
     setBusy(true);
     setError("");
     setFeedback("");
     try {
       const result = await task();
       const snapshot = await refresh();
-      if (snapshot) setFeedback(typeof result === "string" ? result : result(snapshot));
+      if (snapshot) setFeedback(result);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Request failed.");
     } finally {
@@ -217,21 +217,22 @@ export default function LiveDashboard({ view, navigate, transferDemo }: { transf
           if (observation.status !== "OK" || !snapshot) {
             throw new Error("Could not read the saved terms. Check that the HTTPS policy server is running.");
           }
-          return snapshot.services.find(item => item.id === "fictional_analyzer");
+          const service = snapshot.services.find(item => item.id === "fictional_analyzer");
+          const policy = snapshot.versions.find(item => item.service_id === service?.id && item.number === service.current_version);
+          return service && policy ? { service, content: policy.content } : undefined;
+        }}
+        approveStartingPolicy={async ({ service, content }) => {
+          const result = await request<{ status: string }>("services/" + service.id + "/review", {
+            version: service.current_version, applicability: "VERIFIED", opt_out: "NOT_REQUIRED",
+            no_training: true, agreement: "Confirmed the controlled analyzer terms at startup: " + content,
+          });
+          if (result.status !== "APPROVED") throw new Error("The starting terms could not be approved.");
         }}
         openReview={service => {
           setReview(service);
           requestAnimationFrame(() => document.getElementById("overview-policy-review")?.focus());
         }}
-        refreshReadiness={async () => { await refresh(); }}
-        checkPolicy={() => run(async () => {
-          setReview(undefined);
-          const result = await observeAnalyzer();
-          if (result.status !== "OK") return "Could not read the saved terms. Check that the HTTPS policy server is running.";
-          return snapshot => snapshot.services.find(service => service.id === "fictional_analyzer")?.status === "APPROVED"
-            ? "Saved terms checked and approved. You can start Privora."
-            : "Saved terms checked. Click Start Privora to review them. If they allow AI training, restore the no-training sentence in privacy.txt and check again.";
-        })} />}
+        refreshReadiness={async () => { await refresh(); }} />}
       reviewService={id => {
         const service = data.services.find(item => item.id === id);
         if (!service?.current_version || busy) return;

@@ -83,7 +83,9 @@ function updateView(previous: TransferView, next: ProtectionStatus): TransferVie
   };
 }
 
-export function ProtectionPanel({ fetchStatus, mutate, investigate, analyzer, analyzerTerms, busyReview, review, openReview, observeSavedPolicy, checkPolicy, refreshReadiness }: {
+type StartingTerms = { service: Service; content: string };
+
+export function ProtectionPanel({ fetchStatus, mutate, investigate, analyzer, analyzerTerms, busyReview, review, openReview, observeSavedPolicy, approveStartingPolicy, refreshReadiness }: {
   fetchStatus: (signal?: AbortSignal) => Promise<ProtectionStatus>;
   mutate: (method: "POST" | "DELETE", launchDemo: boolean) => Promise<ProtectionStatus>;
   investigate: (change: number) => void;
@@ -92,8 +94,8 @@ export function ProtectionPanel({ fetchStatus, mutate, investigate, analyzer, an
   busyReview: boolean;
   review: ReactNode;
   openReview: (service: Service) => void;
-  observeSavedPolicy: () => Promise<Service | undefined>;
-  checkPolicy: () => Promise<void>;
+  observeSavedPolicy: () => Promise<StartingTerms | undefined>;
+  approveStartingPolicy: (terms: StartingTerms) => Promise<void>;
   refreshReadiness: () => Promise<void>;
 }) {
   const [{ snapshot: state, deliveryEvent, laneReceipts, focus }, setView] = useState<TransferView>({});
@@ -101,6 +103,7 @@ export function ProtectionPanel({ fetchStatus, mutate, investigate, analyzer, an
   const [watchError, setWatchError] = useState(false);
   const [error, setError] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
+  const [startingTerms, setStartingTerms] = useState<StartingTerms>();
 
   useEffect(() => {
     if (busy) return;
@@ -130,8 +133,6 @@ export function ProtectionPanel({ fetchStatus, mutate, investigate, analyzer, an
   const threeLanes = !!state?.three_lanes;
   const comparisonEnabled = !threeLanes && process.env.NEXT_PUBLIC_PRIVORA_COMPARISON === "1";
   const comparison = useComparisonTransfer(comparisonEnabled && !active);
-  const policyReadable = !!analyzer?.current_version && analyzer.fetch_status === "OK";
-  const ready = policyReadable && analyzer.enabled && analyzer.status === "APPROVED";
 
   const items = jobs.flatMap(job => job.items);
   const received = receivedFiles(state);
@@ -168,7 +169,7 @@ export function ProtectionPanel({ fetchStatus, mutate, investigate, analyzer, an
     (evidence?.version === session.current_version && evidence.passages.some(passage => noTrainingTerms(passage.new)))
   );
   const headline = !active ? "Protect every AI-agent transfer." : threeLanes ? "Live transfer protection" : resumed ? "Approved terms restored." : paused ? "Files withheld for now." : restored ? "No-training terms restored." : restricted ? "Confidential transfers restricted." : pending ? "Protecting files in transit." : received ? "Transfer results are ready." : "Monitoring is active.";
-  async function startPrivora() {
+  async function startPrivora(restoredReview = false) {
     setError("");
     if (!state?.enabled || !analyzer?.enabled) {
       setError("The protected queue or analyzer is unavailable. Check the rehearsal Live service.");
@@ -177,15 +178,31 @@ export function ProtectionPanel({ fetchStatus, mutate, investigate, analyzer, an
     setBusy(true);
     try {
       const current = await observeSavedPolicy();
-      if (!current?.enabled || !current.current_version) {
+      if (!current?.service.enabled || !current.service.current_version) {
         setError("The analyzer has no observed terms to review.");
-      } else if (current.status === "APPROVED") {
-        await sessionAction("start");
+      } else if (restoredReview) {
+        openReview(current.service);
       } else {
-        openReview(current);
+        setStartingTerms(current);
+        requestAnimationFrame(() => document.getElementById("starting-policy-confirmation")?.focus());
       }
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Unable to check the saved terms.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function approveAndStart() {
+    if (!startingTerms || !noTrainingTerms(startingTerms.content)) return;
+    setError("");
+    setBusy(true);
+    try {
+      await approveStartingPolicy(startingTerms);
+      setStartingTerms(undefined);
+      await sessionAction(threeLanes ? "transfer" : "start");
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Unable to approve the starting terms.");
     } finally {
       setBusy(false);
     }
@@ -208,11 +225,11 @@ export function ProtectionPanel({ fetchStatus, mutate, investigate, analyzer, an
   })) : jobs.toReversed().map(job => ({ id: job.id, title: "File results", jobs: [job] }));
   return <section className="protection-panel transfer-stage" aria-labelledby="protection-title" data-restricted={threeLanes ? focus?.phase === "withheld" : restricted} data-flow={threeLanes ? laneFlow : flow}>
     <div className="transfer-controls">
-      <span><ShieldCheck size={16} aria-hidden="true" /> {active ? "Privora monitoring" : "Privora Live Demo"}</span>
-      {!active && !threeLanes && <button className="primary" disabled={busy || busyReview || comparison.running || comparison.busy} onClick={() => void startPrivora()}>
+      <span><ShieldCheck size={16} aria-hidden="true" /> {active ? "Privora monitoring" : "Privora"}</span>
+      {(!active || (threeLanes && !jobs.length)) && !startingTerms && <button className="primary" disabled={busy || busyReview || comparison.running || comparison.busy} onClick={() => void startPrivora()}>
         {busy ? "Starting..." : "Start Privora"} <ArrowRight size={16} />
       </button>}
-      {active && <button className="ghost" disabled={busy} onClick={() => void sessionAction("stop")}>Stop demo</button>}
+      {active && <button className="ghost" disabled={busy} onClick={() => void sessionAction("stop")}>Stop Privora</button>}
     </div>
     <div className="transfer-stage-main">
       <div className="transfer-stage-copy">
@@ -233,23 +250,20 @@ export function ProtectionPanel({ fetchStatus, mutate, investigate, analyzer, an
       {!state ? <p role="status">{watchError ? "Unable to read protection status. Check that Live is running." : "Checking Live protection..."}</p>
         : !state.enabled ? <p>The synthetic transfer queue is disabled for this Live service. Use the isolated rehearsal configuration.</p>
         : !analyzer?.enabled ? <p>The fictional analyzer must be configured and enabled before this test can run.</p>
-        : <>
-          {!ready && <p>{policyReadable
-            ? "The current terms need approval before confidential files can be sent."
-            : "Start the HTTPS policy server so Privora can read the saved terms."}</p>}
-          {review}
-          {threeLanes && policyReadable && !ready && !review && <button className="ghost" onClick={() => void startPrivora()}>Review Analyzer A terms</button>}
-          <button className="ghost" disabled={busy || busyReview} onClick={() => {
-            setError("");
-            void checkPolicy();
-          }}>{busyReview ? "Checking..." : "Check saved policy"}</button>
-        </>}
+        : null}
     </div>}
+        {startingTerms && <section className="section panel live-panel" id="starting-policy-confirmation" tabIndex={-1}>
+          <h2>Approve the starting terms?</h2>
+          <p className="muted">Current terms served by Analyzer A</p>
+          <div className="policy-review-terms"><pre>{startingTerms.content}</pre></div>
+          {noTrainingTerms(startingTerms.content)
+            ? <button className="primary" disabled={busy} onClick={() => void approveAndStart()}>{busy ? "Starting..." : "Approve and start Privora"}</button>
+            : <p role="status">Restore the approved no-training sentence in privacy.txt, then click Start Privora again.</p>}
+          <button type="button" className="ghost" disabled={busy} onClick={() => { setStartingTerms(undefined); setError(""); }}>Cancel</button>
+        </section>}
         {restored && !paused && (review || <button className="primary" disabled={busy || busyReview}
-          onClick={() => void startPrivora()}>Review restored terms</button>)}
+          onClick={() => void startPrivora(true)}>Review restored terms</button>)}
         {!active && comparisonEnabled && <ComparisonTransfer state={comparison.state} error={comparison.error} startedHere={comparison.startedHere} />}
-        {threeLanes && (!active || !jobs.length) && <button className="primary" disabled={busy || busyReview}
-          onClick={() => void sessionAction("transfer")}>{busy ? "Starting..." : "Start Live Demo"} <ArrowRight size={16} /></button>}
         {!threeLanes && (active ? state?.demo_enabled && !jobs.length : comparisonEnabled) &&
           <button className="primary" disabled={!state || busy || comparison.busy}
             onClick={() => active ? void sessionAction("transfer") : void comparison.change(comparison.running ? "DELETE" : "POST")}>

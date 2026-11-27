@@ -8,7 +8,9 @@ An AI agent may have permission to send confidential data to a provider. If that
 
 ## Live demo
 
-Open **Overview** and click **Start Live Demo**. Each analyzer gets 13 confidential and 7 public submissions using the registered synthetic GitHub fixtures. The two lanes show which file is processing and its classification. The gateway animation follows real processing and receiver receipts.
+Open **Overview** and click **Start Privora**. Privora fetches Analyzer A's current HTTPS terms and shows them for confirmation. Select **Approve and start Privora** to launch the batch, or **Cancel** to leave it idle. If the terms allow AI training, restore the approved starting sentence below and try again.
+
+Each analyzer gets 13 confidential and 7 public submissions using the registered synthetic GitHub fixtures. The two lanes show which file is processing and its classification. The gateway animation follows real processing and receiver receipts. Use **Stop Privora** to end the session and cancel any files still in the queue.
 
 1. Start with both analyzers independently approved and both policies using the no-training sentence below.
 2. After the first deliveries, edit only [`privacy.txt`](privacy.txt) and save the training sentence.
